@@ -136,15 +136,15 @@ app.post('/mcp', async (req, res) => {
                         resultText += formatRadioStation(station, index + 1);
                     });
                 }
-                const podcastData = results.find((r) => r.type === "podcast");
-                if (podcastData && podcastData.data.length > 0) {
-                    const podcasts = podcastData.data;
-                    resultText += `\n\n🎙️ **PODCASTS (${podcasts.length})**\n`;
-                    resultText += `────────────────────────────────────\n`;
-                    podcasts.forEach((podcast, index) => {
-                        resultText += formatPodcast(podcast, index + 1);
-                    });
-                }
+                // const podcastData = results.find((r) => r.type === "podcast");
+                // if (podcastData && podcastData.data.length > 0) {
+                //     const podcasts = podcastData.data;
+                //     resultText += `\n\n🎙️ **PODCASTS (${podcasts.length})**\n`;
+                //     resultText += `────────────────────────────────────\n`;
+                //     podcasts.forEach((podcast, index) => {
+                //         resultText += formatPodcast(podcast, index + 1);
+                //     });
+                // }
                 resultText += `\n════════════════════════════════════\n`;
                 resultText += `💡 Click any deeplink above to play on radiofm.co\n`;
                 return res.json({
