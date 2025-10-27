@@ -1,4 +1,3 @@
-import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import express from 'express';
 import cors from 'cors';
 import axios from "axios";
@@ -55,14 +54,6 @@ interface ApiResponse {
     };
 }
 
-// Create MCP server instance
-const server = new Server(
-    {
-        name: "radiofm-mcp-server",
-        version: "1.0.0",
-    }
-);
-
 // Format radio station details
 function formatRadioStation(station: RadioStation, index: number): string {
     let result = `\n🎵 **${index}. ${station.st_name}**\n`;
@@ -111,58 +102,64 @@ app.use(express.json());
 
 // Health check endpoint
 app.get('/', (_req: express.Request, res: express.Response) => {
-    res.json({ status: 'Radio FM MCP Server is running' });
+    res.json({
+        status: 'Radio FM MCP Server is running',
+        version: '1.0.0',
+        protocol: 'MCP'
+    });
 });
 
-// MCP endpoint
+// MCP endpoint - handles all MCP protocol requests
 app.post('/mcp', async (req: express.Request, res: express.Response) => {
     try {
         const { method, params, id } = req.body;
 
-        if (method === 'list_tools') {
-            const response = {
-                schema_version: "v1",
-                name_for_human: "Radio FM Search",
-                name_for_model: "radiofm_search",
-                description_for_human: "Search for radio stations and podcasts worldwide",
-                description_for_model: "Use this tool to search for radio stations and podcasts by name, location, language, or genre.",
-                auth: {
-                    type: "none"
-                },
-                api: {
-                    type: "openapi",
-                    url: "https://my-mcp-server-flame.vercel.app/mcp",
-                    has_user_authentication: false
-                },
-                tools: [
-                    {
-                        type: "function",
-                        function: {
-                            name: "search_radio_stations",
-                            description: "Search for radio stations and podcasts",
-                            parameters: {
-                                type: "object",
-                                properties: {
-                                    query: {
-                                        type: "string",
-                                        description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
-                                    }
-                                },
-                                required: ["query"]
-                            }
-                        }
-                    }
-                ]
-            };
-
+        // Handle initialize method (required for MCP handshake)
+        if (method === 'initialize') {
             return res.json({
                 jsonrpc: '2.0',
                 id,
-                result: response
+                result: {
+                    protocolVersion: '2024-11-05',
+                    capabilities: {
+                        tools: {}
+                    },
+                    serverInfo: {
+                        name: 'radiofm-mcp-server',
+                        version: '1.0.0'
+                    }
+                }
             });
         }
 
-        if (method === 'call_tool') {
+        // Handle tools/list method
+        if (method === 'tools/list') {
+            return res.json({
+                jsonrpc: '2.0',
+                id,
+                result: {
+                    tools: [
+                        {
+                            name: 'search_radio_stations',
+                            description: 'Search for radio stations and podcasts worldwide by name, location, language, or genre',
+                            inputSchema: {
+                                type: 'object',
+                                properties: {
+                                    query: {
+                                        type: 'string',
+                                        description: 'Search query (e.g., "BBC", "India", "Hindi", "Jazz")'
+                                    }
+                                },
+                                required: ['query']
+                            }
+                        }
+                    ]
+                }
+            });
+        }
+
+        // Handle tools/call method
+        if (method === 'tools/call') {
             const { name, arguments: args } = params;
 
             if (name === 'search_radio_stations') {
@@ -193,8 +190,12 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
                         jsonrpc: '2.0',
                         id,
                         result: {
-                            type: "success",
-                            output: `🔍 No results found for "${query}"\n\nTry searching with:\n- Station name (e.g., "BBC", "NPR")\n- Country (e.g., "UK", "USA", "India")\n- Language (e.g., "English", "Spanish")\n- Genre (e.g., "Jazz", "News", "Rock")`
+                            content: [
+                                {
+                                    type: 'text',
+                                    text: `🔍 No results found for "${query}"\n\nTry searching with:\n- Station name (e.g., "BBC", "NPR")\n- Country (e.g., "UK", "USA", "India")\n- Language (e.g., "English", "Spanish")\n- Genre (e.g., "Jazz", "News", "Rock")`
+                                }
+                            ]
                         }
                     });
                 }
@@ -229,8 +230,12 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
                     jsonrpc: '2.0',
                     id,
                     result: {
-                        type: "success",
-                        output: resultText
+                        content: [
+                            {
+                                type: 'text',
+                                text: resultText
+                            }
+                        ]
                     }
                 });
             }
@@ -240,6 +245,7 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
 
         throw new Error(`Unknown method: ${method}`);
     } catch (error: any) {
+        console.error('MCP Error:', error);
         res.json({
             jsonrpc: '2.0',
             id: req.body.id,
@@ -254,4 +260,5 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
 // Start the server
 app.listen(port, () => {
     console.log(`Radio FM MCP Server running on http://localhost:${port}`);
+    console.log(`MCP endpoint: http://localhost:${port}/mcp`);
 });
