@@ -16,9 +16,9 @@ function formatRadioStation(station, index) {
     result += `   🎧 Stream: ${station.stream_type} @ ${station.stream_bitrate}kbps\n`;
     result += `   ⭐ Plays: ${parseInt(station.st_play_cnt).toLocaleString()} | Favorites: ${parseInt(station.st_fav_cnt).toLocaleString()}\n`;
     result += `   🔗 Play on Radio FM: ${station.deeplink}\n`;
-    if (station.st_weburl && station.st_weburl !== "~") {
-        result += `   🌍 Website: ${station.st_weburl}\n`;
-    }
+    // if (station.st_weburl && station.st_weburl !== "~") {
+    //     result += `   🌍 Website: ${station.st_weburl}\n`;
+    // }
     return result;
 }
 // Format podcast details
