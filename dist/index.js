@@ -6,35 +6,33 @@ const RADIOFM_API_BASE = "https://devappradiofm.radiofm.co/rfm/api";
 const port = process.env.PORT || 3000;
 // Format radio station details
 function formatRadioStation(station, index) {
-    let result = `\n🎵 **${index}. ${station.st_name}**\n`;
-    result += `   📍 Location: ${station.st_city}, ${station.st_state}, ${station.country_name_rs}\n`;
-    result += `   🌐 Language: ${station.language}\n`;
-    result += `   🎼 Genre: ${station.st_genre}\n`;
+    const lines = [
+        `${index}. ${station.st_name}`,
+        `Location: ${station.st_city}, ${station.st_state}, ${station.country_name_rs}`,
+        `Language: ${station.language}`,
+        `Genre: ${station.st_genre}`
+    ];
     if (station.st_bc_freq !== "~") {
-        result += `   📻 Frequency: ${station.st_bc_freq}\n`;
+        lines.push(`Frequency: ${station.st_bc_freq}`);
     }
-    result += `   🎧 Stream: ${station.stream_type} @ ${station.stream_bitrate}kbps\n`;
-    result += `   ⭐ Plays: ${parseInt(station.st_play_cnt).toLocaleString()} | Favorites: ${parseInt(station.st_fav_cnt).toLocaleString()}\n`;
-    result += `   🔗 Play on Radio FM: ${station.deeplink}\n`;
-    // if (station.st_weburl && station.st_weburl !== "~") {
-    //     result += `   🌍 Website: ${station.st_weburl}\n`;
-    // }
-    return result;
+    lines.push(`Stream: ${station.stream_type} ${station.stream_bitrate}kbps`, `Plays: ${parseInt(station.st_play_cnt).toLocaleString()}`, `Listen: ${station.deeplink}`);
+    return lines.join('\n');
 }
 // Format podcast details
 function formatPodcast(podcast, index) {
-    let result = `\n🎙️ **${index}. ${podcast.p_name}**\n`;
-    result += `   📂 Category: ${podcast.cat_name}\n`;
-    result += `   🌐 Language: ${podcast.p_lang}\n`;
+    const lines = [
+        `${index}. ${podcast.p_name}`,
+        `Category: ${podcast.cat_name}`,
+        `Language: ${podcast.p_lang}`
+    ];
     if (podcast.p_desc) {
-        const shortDesc = podcast.p_desc.length > 150
-            ? podcast.p_desc.substring(0, 150) + "..."
+        const shortDesc = podcast.p_desc.length > 100
+            ? podcast.p_desc.substring(0, 100) + "..."
             : podcast.p_desc;
-        result += `   📝 Description: ${shortDesc}\n`;
+        lines.push(`Description: ${shortDesc}`);
     }
-    result += `   🎧 Total Streams: ${parseInt(podcast.total_stream).toLocaleString()}\n`;
-    result += `   🔗 Listen on Radio FM: ${podcast.deeplink}\n`;
-    return result;
+    lines.push(`Streams: ${parseInt(podcast.total_stream).toLocaleString()}`, `Listen: ${podcast.deeplink}`);
+    return lines.join('\n');
 }
 // Set up Express app
 const app = express();
@@ -125,28 +123,19 @@ app.post('/mcp', async (req, res) => {
                         }
                     });
                 }
-                let resultText = `🎵 **Search Results for "${query}"**\n`;
-                resultText += `════════════════════════════════════\n`;
+                const sections = [`Search Results for "${query}"`];
                 const radioData = results.find((r) => r.type === "radio");
                 if (radioData && radioData.data.length > 0) {
                     const stations = radioData.data;
-                    resultText += `\n📻 **RADIO STATIONS (${stations.length})**\n`;
-                    resultText += `────────────────────────────────────\n`;
-                    stations.forEach((station, index) => {
-                        resultText += formatRadioStation(station, index + 1);
-                    });
+                    sections.push(`\nRADIO STATIONS (${stations.length})`, ...stations.map((station, index) => formatRadioStation(station, index + 1)));
                 }
                 const podcastData = results.find((r) => r.type === "podcast");
                 if (podcastData && podcastData.data.length > 0) {
                     const podcasts = podcastData.data;
-                    resultText += `\n\n🎙️ **PODCASTS (${podcasts.length})**\n`;
-                    resultText += `────────────────────────────────────\n`;
-                    podcasts.forEach((podcast, index) => {
-                        resultText += formatPodcast(podcast, index + 1);
-                    });
+                    sections.push(`\nPODCASTS (${podcasts.length})`, ...podcasts.map((podcast, index) => formatPodcast(podcast, index + 1)));
                 }
-                resultText += `\n════════════════════════════════════\n`;
-                resultText += `💡 Click any deeplink above to play on radiofm.co\n`;
+                sections.push('\nTap on any "Listen" link to play on radiofm.co');
+                const resultText = sections.join('\n');
                 return res.json({
                     jsonrpc: '2.0',
                     id,
