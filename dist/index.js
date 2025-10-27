@@ -59,19 +59,38 @@ app.post('/mcp', async (req, res) => {
                 tools: [
                     {
                         name: "search_radio_stations",
-                        description: "Search for radio stations and podcasts by name, country, language, or genre. Returns matching results with playable deeplinks to radiofm.co website.",
+                        description: "Search for radio stations and podcasts by name, country, language, or genre",
                         parameters: {
                             type: "object",
                             properties: {
                                 query: {
                                     type: "string",
-                                    description: "Search query for radio stations or podcasts (e.g., 'BBC', 'India', 'Hindi', 'Jazz', 'News')",
+                                    description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
                                 }
                             },
-                            required: ["query"]
+                            required: ["query"],
+                            additionalProperties: false
+                        },
+                        returns: {
+                            type: "object",
+                            properties: {
+                                content: {
+                                    type: "array",
+                                    items: {
+                                        type: "object",
+                                        properties: {
+                                            type: { type: "string" },
+                                            text: { type: "string" }
+                                        },
+                                        required: ["type", "text"]
+                                    }
+                                }
+                            },
+                            required: ["content"]
                         }
                     }
-                ]
+                ],
+                schema_version: "1.0"
             };
             return res.json({
                 jsonrpc: '2.0',
