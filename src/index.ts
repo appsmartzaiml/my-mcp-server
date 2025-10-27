@@ -121,41 +121,38 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
 
         if (method === 'list_tools') {
             const response = {
+                schema_version: "v1",
+                name_for_human: "Radio FM Search",
+                name_for_model: "radiofm_search",
+                description_for_human: "Search for radio stations and podcasts worldwide",
+                description_for_model: "Use this tool to search for radio stations and podcasts by name, location, language, or genre.",
+                auth: {
+                    type: "none"
+                },
+                api: {
+                    type: "openapi",
+                    url: "https://my-mcp-server-flame.vercel.app/mcp",
+                    has_user_authentication: false
+                },
                 tools: [
                     {
-                        name: "search_radio_stations",
-                        description: "Search for radio stations and podcasts by name, country, language, or genre",
-                        parameters: {
-                            type: "object",
-                            properties: {
-                                query: {
-                                    type: "string",
-                                    description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
-                                }
-                            },
-                            required: ["query"],
-                            additionalProperties: false
-                        },
-                        returns: {
-                            type: "object",
-                            properties: {
-                                content: {
-                                    type: "array",
-                                    items: {
-                                        type: "object",
-                                        properties: {
-                                            type: { type: "string" },
-                                            text: { type: "string" }
-                                        },
-                                        required: ["type", "text"]
+                        type: "function",
+                        function: {
+                            name: "search_radio_stations",
+                            description: "Search for radio stations and podcasts",
+                            parameters: {
+                                type: "object",
+                                properties: {
+                                    query: {
+                                        type: "string",
+                                        description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
                                     }
-                                }
-                            },
-                            required: ["content"]
+                                },
+                                required: ["query"]
+                            }
                         }
                     }
-                ],
-                schema_version: "1.0"
+                ]
             };
 
             return res.json({
@@ -196,10 +193,8 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
                         jsonrpc: '2.0',
                         id,
                         result: {
-                            content: [{
-                                type: "text",
-                                text: `🔍 No results found for "${query}"\n\nTry searching with:\n- Station name (e.g., "BBC", "NPR")\n- Country (e.g., "UK", "USA", "India")\n- Language (e.g., "English", "Spanish")\n- Genre (e.g., "Jazz", "News", "Rock")`
-                            }]
+                            type: "success",
+                            output: `🔍 No results found for "${query}"\n\nTry searching with:\n- Station name (e.g., "BBC", "NPR")\n- Country (e.g., "UK", "USA", "India")\n- Language (e.g., "English", "Spanish")\n- Genre (e.g., "Jazz", "News", "Rock")`
                         }
                     });
                 }
@@ -234,10 +229,8 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
                     jsonrpc: '2.0',
                     id,
                     result: {
-                        content: [{
-                            type: "text",
-                            text: resultText
-                        }]
+                        type: "success",
+                        output: resultText
                     }
                 });
             }
