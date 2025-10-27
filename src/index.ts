@@ -70,7 +70,7 @@ function formatRadioStation(station: RadioStation, index: number): string {
     lines.push(
         `Stream: ${station.stream_type} ${station.stream_bitrate}kbps`,
         `Plays: ${parseInt(station.st_play_cnt).toLocaleString()}`,
-        `Listen:'https://appradiofm.com/radioplay/' ${station.st_shorturl}`
+        `Listen: ${station.deeplink}`
     );
 
     return lines.join('\n');
