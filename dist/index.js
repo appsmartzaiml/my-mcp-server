@@ -15,7 +15,7 @@ function formatRadioStation(station, index) {
     if (station.st_bc_freq !== "~") {
         lines.push(`Frequency: ${station.st_bc_freq}`);
     }
-    lines.push(`Stream: ${station.stream_type} ${station.stream_bitrate}kbps`, `Plays: ${parseInt(station.st_play_cnt).toLocaleString()}`, `Listen: ${station.deeplink}`);
+    lines.push(`Stream: ${station.stream_type} ${station.stream_bitrate}kbps`, `Plays: ${parseInt(station.st_play_cnt).toLocaleString()}`, `Listen: 'https://appradiofm.com/radioplay/' ${station.st_shorturl}`);
     return lines.join('\n');
 }
 // Format podcast details
