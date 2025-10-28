@@ -113,6 +113,15 @@ app.get('/', (_req: express.Request, res: express.Response) => {
     });
 });
 
+// Enable detailed logging
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`, {
+        body: req.body,
+        headers: req.headers['user-agent']
+    });
+    next();
+});
+
 // MCP endpoint - handles all MCP protocol requests
 app.post('/mcp', async (req: express.Request, res: express.Response) => {
     try {
@@ -228,16 +237,17 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
 
                 const resultText = sections.join('\n');
 
+                // Split long text into smaller chunks for better mobile handling
+                const chunks = resultText.split('\n\n').filter(Boolean);
+                
                 return res.json({
                     jsonrpc: '2.0',
                     id,
                     result: {
-                        content: [
-                            {
-                                type: 'text',
-                                text: resultText
-                            }
-                        ]
+                        content: chunks.map(chunk => ({
+                            type: 'text',
+                            text: chunk.trim()
+                        }))
                     }
                 });
             }
@@ -247,13 +257,24 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
 
         throw new Error(`Unknown method: ${method}`);
     } catch (error: any) {
-        console.error('MCP Error:', error);
+        console.error('MCP Error:', {
+            message: error.message,
+            stack: error.stack,
+            method: req.body.method,
+            params: req.body.params
+        });
+
+        // Send a more detailed error response
         res.json({
             jsonrpc: '2.0',
             id: req.body.id,
             error: {
                 code: -32000,
-                message: error.message || 'Internal server error'
+                message: 'Search failed. Please try again.',
+                data: {
+                    details: error.message || 'Internal server error',
+                    timestamp: new Date().toISOString()
+                }
             }
         });
     }
