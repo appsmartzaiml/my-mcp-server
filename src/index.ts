@@ -215,15 +215,14 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
                     );
                 }
 
-                // const podcastData = results.find((r) => r.type === "podcast");
-                // if (podcastData && podcastData.data.length > 0) {
-                //     const podcasts = podcastData.data as Podcast[];
-                //     resultText += `\n\n🎙️ **PODCASTS (${podcasts.length})**\n`;
-                //     resultText += `────────────────────────────────────\n`;
-                //     podcasts.forEach((podcast, index) => {
-                //         resultText += formatPodcast(podcast, index + 1);
-                //     });
-                // }
+                const podcastData = results.find((r) => r.type === "podcast");
+                if (podcastData && podcastData.data.length > 0) {
+                    const podcasts = podcastData.data as Podcast[];
+                    sections.push(
+                        `\nPODCASTS (${podcasts.length})`,
+                        ...podcasts.map((podcast, index) => formatPodcast(podcast, index + 1))
+                    );
+                }
 
                 sections.push('\nTap on any "Listen" link to play on radiofm.co');
 
