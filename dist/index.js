@@ -129,11 +129,14 @@ app.post('/mcp', async (req, res) => {
                     const stations = radioData.data;
                     sections.push(`\nRADIO STATIONS (${stations.length})`, ...stations.map((station, index) => formatRadioStation(station, index + 1)));
                 }
-                const podcastData = results.find((r) => r.type === "podcast");
-                if (podcastData && podcastData.data.length > 0) {
-                    const podcasts = podcastData.data;
-                    sections.push(`\nPODCASTS (${podcasts.length})`, ...podcasts.map((podcast, index) => formatPodcast(podcast, index + 1)));
-                }
+                // const podcastData = results.find((r) => r.type === "podcast");
+                // if (podcastData && podcastData.data.length > 0) {
+                //     const podcasts = podcastData.data as Podcast[];
+                //     sections.push(
+                //         `\nPODCASTS (${podcasts.length})`,
+                //         ...podcasts.map((podcast, index) => formatPodcast(podcast, index + 1))
+                //     );
+                // }
                 sections.push('\nTap on any "Listen" link to play on radiofm.co');
                 const resultText = sections.join('\n');
                 return res.json({
