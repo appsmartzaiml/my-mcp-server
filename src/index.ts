@@ -262,5 +262,5 @@ app.post('/mcp', async (req: express.Request, res: express.Response) => {
 // Start the server
 app.listen(port, () => {
     console.log(`Radio FM MCP Server running on http://localhost:${port}`);
-    console.log(`MCP endpoint: http://localhost:${port}/mcp`);
+    console.log(`MCP endpoint : http://localhost:${port}/mcp`);
 });
