@@ -4,9 +4,24 @@
         {
             "src": "dist/index.js",
             "use": "@vercel/node"
+        },
+        {
+            "src": "public/**",
+            "use": "@vercel/static"
         }
     ],
     "routes": [
+        {
+            "src": "/mcp",
+            "methods": [
+                "POST"
+            ],
+            "dest": "dist/index.js"
+        },
+        {
+            "src": "/UpdatedRFMIcon.png",
+            "dest": "/public/UpdatedRFMIcon.png"
+        },
         {
             "src": "/(.*)",
             "dest": "dist/index.js"

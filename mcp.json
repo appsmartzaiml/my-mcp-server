@@ -1,0 +1,51 @@
+{
+    "name": "RadioFM",
+    "version": "1.0.0",
+    "description": "RadioFM is a public MCP connector that lets ChatGPT search and discover radio stations and podcasts worldwide by name, location, language, or genre. Find and listen to live broadcasts from thousands of stations globally. No authentication required.",
+    "endpoints": {
+        "main": "https://my-mcp-server-flame.vercel.app/mcp"
+    },
+    "auth": {
+        "type": "none"
+    },
+    "capabilities": {
+        "tools": [
+            {
+                "name": "search_radio_stations",
+                "description": "Search for radio stations and podcasts worldwide by name, location, language, or genre",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
+                        }
+                    },
+                    "required": [
+                        "query"
+                    ]
+                }
+            }
+        ]
+    },
+    "categories": [
+        "media",
+        "entertainment",
+        "music"
+    ],
+    "author": {
+        "name": "Radio FM",
+        "website": "https://appradiofm.com/terms-of-use",
+        "email": "support@appradiofm.com"
+    },
+    "icon": {
+        "url": "https://my-mcp-server-flame.vercel.app/UpdatedRFMIcon.png",
+        "background": "#111827"
+    },
+    "legal": {
+        "privacy_policy_url": "https://appradiofm.com/privacy-policy",
+        "terms_of_service_url": "https://appradiofm.com/terms-of-use"
+    },
+    "homepage": "https://appradiofm.com/",
+    "license": "MIT"
+}
