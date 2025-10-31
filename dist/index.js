@@ -46,6 +46,53 @@ app.get('/', (_req, res) => {
         protocol: 'MCP'
     });
 });
+app.get('/mcp', (_req, res) => {
+    res.json({
+        schema_version: "v1",
+        name: "RadioFM",
+        version: "1.0.0",
+        description: "RadioFM lets ChatGPT search and discover radio stations and podcasts worldwide by name, location, language, or genre. No authentication required.",
+        api: {
+            type: "openapi",
+            url: "https://my-mcp-server-flame.vercel.app/mcp" // or your OpenAPI spec if you have one
+        },
+        auth: "none",
+        capabilities: {
+            tools: [
+                {
+                    name: "search_radio_stations",
+                    description: "Search for radio stations and podcasts worldwide by name, location, language, or genre",
+                    inputSchema: {
+                        type: "object",
+                        properties: {
+                            query: {
+                                type: "string",
+                                description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
+                            }
+                        },
+                        required: ["query"]
+                    }
+                }
+            ]
+        },
+        categories: ["media", "entertainment", "music"],
+        author: {
+            name: "Radio FM",
+            website: "https://appradiofm.com/terms-of-use",
+            email: "support@appradiofm.com"
+        },
+        icon: {
+            url: "https://my-mcp-server-flame.vercel.app/UpdatedRFMIcon.png",
+            background: "#111827"
+        },
+        legal: {
+            privacy_policy_url: "https://appradiofm.com/privacy-policy",
+            terms_of_service_url: "https://appradiofm.com/terms-of-use"
+        },
+        homepage: "https://appradiofm.com/",
+        license: "MIT"
+    });
+});
 // MCP endpoint - handles all MCP protocol requests
 app.post('/mcp', async (req, res) => {
     try {
@@ -171,6 +218,6 @@ app.post('/mcp', async (req, res) => {
 // Start the server
 app.listen(port, () => {
     console.log(`Radio FM MCP Server running on http://localhost:${port}`);
-    console.log(`MCP endpoint: http://localhost:${port}/mcp`);
+    console.log(`MCP endpoint : http://localhost:${port}/mcp`);
 });
 //# sourceMappingURL=index.js.map
