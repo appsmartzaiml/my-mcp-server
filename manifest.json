@@ -1,7 +1,7 @@
 {
     "schema_version": "v1",
     "name": "RadioFM",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "description": "RadioFM lets ChatGPT search and discover radio stations and podcasts worldwide by name, location, language, or genre. No authentication required.",
     "api": {
         "type": "openapi",

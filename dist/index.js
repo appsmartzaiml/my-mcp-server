@@ -42,7 +42,7 @@ app.use(express.json());
 app.get('/', (_req, res) => {
     res.json({
         status: 'Radio FM MCP Server is running',
-        version: '1.0.0',
+        version: '1.0.1',
         protocol: 'MCP'
     });
 });
@@ -50,7 +50,7 @@ app.get('/mcp', (_req, res) => {
     res.json({
         schema_version: "v1",
         name: "RadioFM",
-        version: "1.0.0",
+        version: "1.0.1",
         description: "RadioFM lets ChatGPT search and discover radio stations and podcasts worldwide by name, location, language, or genre. No authentication required.",
         api: {
             type: "openapi",
@@ -109,7 +109,7 @@ app.post('/mcp', async (req, res) => {
                     },
                     serverInfo: {
                         name: 'radiofm-mcp-server',
-                        version: '1.0.0'
+                        version: '1.0.1'
                     }
                 }
             });
