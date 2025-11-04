@@ -303,3 +303,5 @@ app.listen(port, () => {
     console.log(`✅ Radio FM MCP Server running on http://localhost:${port}`);
     console.log(`📡 MCP descriptor: /mcp.json`);
 });
+
+export default app;
