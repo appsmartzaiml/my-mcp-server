@@ -1,7 +1,6 @@
-import express from 'express';
-import cors from 'cors';
+import express from "express";
+import cors from "cors";
 import axios from "axios";
-// Radio FM API configuration
 const RADIOFM_API_BASE = "https://devappradiofm.radiofm.co/rfm/api";
 const port = process.env.PORT || 3000;
 // Format radio station details
@@ -10,20 +9,19 @@ function formatRadioStation(station, index) {
         `${index}. ${station.st_name}`,
         `Location: ${station.st_city}, ${station.st_state}, ${station.country_name_rs}`,
         `Language: ${station.language}`,
-        `Genre: ${station.st_genre}`
+        `Genre: ${station.st_genre}`,
     ];
-    if (station.st_bc_freq !== "~") {
+    if (station.st_bc_freq !== "~")
         lines.push(`Frequency: ${station.st_bc_freq}`);
-    }
     lines.push(`Stream: ${station.stream_type} ${station.stream_bitrate}kbps`, `Plays: ${parseInt(station.st_play_cnt).toLocaleString()}`, `Listen: https://appradiofm.com/radioplay/${station.st_shorturl}`);
-    return lines.join('\n');
+    return lines.join("\n");
 }
 // Format podcast details
 function formatPodcast(podcast, index) {
     const lines = [
         `${index}. ${podcast.p_name}`,
         `Category: ${podcast.cat_name}`,
-        `Language: ${podcast.p_lang}`
+        `Language: ${podcast.p_lang}`,
     ];
     if (podcast.p_desc) {
         const shortDesc = podcast.p_desc.length > 100
@@ -32,192 +30,175 @@ function formatPodcast(podcast, index) {
         lines.push(`Description: ${shortDesc}`);
     }
     lines.push(`Streams: ${parseInt(podcast.total_stream).toLocaleString()}`, `Listen: ${podcast.deeplink}`);
-    return lines.join('\n');
+    return lines.join("\n");
 }
-// Set up Express app
+// Express setup
 const app = express();
 app.use(cors());
 app.use(express.json());
-// Health check endpoint
-app.get('/', (_req, res) => {
+// Handle preflight
+app.options("*", cors());
+// Health check
+app.get("/", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.json({
-        status: 'Radio FM MCP Server is running',
-        version: '1.0.1',
-        protocol: 'MCP'
+        status: "Radio FM MCP Server is running",
+        version: "1.0.1",
+        protocol: "MCP",
     });
 });
-app.get('/mcp', (_req, res) => {
+// MCP descriptor (for ChatGPT Apps & Connectors)
+app.get("/mcp.json", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     res.json({
         schema_version: "v1",
         name: "RadioFM",
         version: "1.0.1",
-        description: "RadioFM lets ChatGPT search and discover radio stations and podcasts worldwide by name, location, language, or genre. No authentication required.",
+        description: "Radio FM brings the world’s radio stations and podcasts directly into ChatGPT. Explore live broadcasts from over 200 countries — search by station name, city, country, language, or genre, and instantly discover music, news, talk, and sports channels that suit your mood. Whether you want trending hits, sports or regional talk shows, or local community radio, ChatGPT can use Radio FM to find and play them in real time. No authentication or setup is required — just search and start listening.",
         api: {
-            type: "openapi",
-            url: "https://my-mcp-server-flame.vercel.app/mcp" // or your OpenAPI spec if you have one
+            type: "mcp",
+            url: "https://my-mcp-server-flame.vercel.app/mcp",
         },
         auth: "none",
         capabilities: {
             tools: [
                 {
                     name: "search_radio_stations",
-                    description: "Search for radio stations and podcasts worldwide by name, location, language, or genre",
+                    description: "Search and discover live radio stations and podcasts from across the world by entering a station name, location, country, language, or genre. ChatGPT connects with the Radio FM database to instantly return matching stations you can explore or play — from local favorites to trending global broadcasts.",
                     inputSchema: {
                         type: "object",
                         properties: {
                             query: {
                                 type: "string",
-                                description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
-                            }
+                                description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')",
+                            },
                         },
-                        required: ["query"]
-                    }
-                }
-            ]
+                        required: ["query"],
+                    },
+                },
+            ],
         },
-        categories: ["media", "entertainment", "music"],
+        categories: ["radio", "news", "media", "entertainment", "music"],
         author: {
             name: "Radio FM",
             website: "https://appradiofm.com/terms-of-use",
-            email: "support@appradiofm.com"
+            email: "support@appradiofm.com",
         },
         icon: {
             url: "https://my-mcp-server-flame.vercel.app/UpdatedRFMIcon.png",
-            background: "#111827"
+            background: "#111827",
         },
         legal: {
             privacy_policy_url: "https://appradiofm.com/privacy-policy",
-            terms_of_service_url: "https://appradiofm.com/terms-of-use"
+            terms_of_service_url: "https://appradiofm.com/terms-of-use",
         },
         homepage: "https://appradiofm.com/",
-        license: "MIT"
+        license: "MIT",
     });
 });
-// MCP endpoint - handles all MCP protocol requests
-app.post('/mcp', async (req, res) => {
+// MCP protocol handler
+app.post("/mcp", async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "application/json");
     try {
         const { method, params, id } = req.body;
-        // Handle initialize method (required for MCP handshake)
-        if (method === 'initialize') {
+        // Initialize handshake
+        if (method === "initialize") {
             return res.json({
-                jsonrpc: '2.0',
+                jsonrpc: "2.0",
                 id,
                 result: {
-                    protocolVersion: '2024-11-05',
-                    capabilities: {
-                        tools: {}
-                    },
-                    serverInfo: {
-                        name: 'radiofm-mcp-server',
-                        version: '1.0.1'
-                    }
-                }
+                    protocolVersion: "2025-11-04",
+                    capabilities: { tools: {} },
+                    serverInfo: { name: "radiofm-mcp-server", version: "1.0.1" },
+                },
             });
         }
-        // Handle tools/list method
-        if (method === 'tools/list') {
+        // List tools
+        if (method === "tools/list") {
             return res.json({
-                jsonrpc: '2.0',
+                jsonrpc: "2.0",
                 id,
                 result: {
                     tools: [
                         {
-                            name: 'search_radio_stations',
-                            description: 'Search for radio stations and podcasts worldwide by name, location, language, or genre',
+                            name: "search_radio_stations",
+                            description: "Search and explore live radio stations and podcasts from around the world using the Radio FM app within ChatGPT. Discover trending music, news, and cultural broadcasts across languages, genres, and countries — all seamlessly accessible without sign-in.",
                             inputSchema: {
-                                type: 'object',
+                                type: "object",
                                 properties: {
                                     query: {
-                                        type: 'string',
-                                        description: 'Search query (e.g., "BBC", "India", "Hindi", "Jazz")'
-                                    }
+                                        type: "string",
+                                        description: "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')",
+                                    },
                                 },
-                                required: ['query']
-                            }
-                        }
-                    ]
-                }
+                                required: ["query"],
+                            },
+                        },
+                    ],
+                },
             });
         }
-        // Handle tools/call method
-        if (method === 'tools/call') {
+        // Tool call
+        if (method === "tools/call") {
             const { name, arguments: args } = params;
-            if (name === 'search_radio_stations') {
-                const query = args?.query;
-                if (!query) {
-                    throw new Error("Search query is required");
-                }
-                const response = await axios.get(`${RADIOFM_API_BASE}/new_combo_search.php`, {
-                    params: { srch: query },
-                    timeout: 15000,
-                });
-                const apiData = response.data;
-                if (apiData.data.ErrorCode !== 0) {
-                    throw new Error(apiData.data.ErrorMessage);
-                }
-                const results = apiData.data.Data;
-                if (!results || results.length === 0) {
-                    return res.json({
-                        jsonrpc: '2.0',
-                        id,
-                        result: {
-                            content: [
-                                {
-                                    type: 'text',
-                                    text: `🔍 No results found for "${query}"\n\nTry searching with:\n- Station name (e.g., "BBC", "NPR")\n- Country (e.g., "UK", "USA", "India")\n- Language (e.g., "English", "Spanish")\n- Genre (e.g., "Jazz", "News", "Rock")`
-                                }
-                            ]
-                        }
-                    });
-                }
-                const sections = [`Search Results for "${query}"`];
-                const radioData = results.find((r) => r.type === "radio");
-                if (radioData && radioData.data.length > 0) {
-                    const stations = radioData.data;
-                    sections.push(`\nRADIO STATIONS (${stations.length})`, ...stations.map((station, index) => formatRadioStation(station, index + 1)));
-                }
-                // const podcastData = results.find((r) => r.type === "podcast");
-                // if (podcastData && podcastData.data.length > 0) {
-                //     const podcasts = podcastData.data as Podcast[];
-                //     sections.push(
-                //         `\nPODCASTS (${podcasts.length})`,
-                //         ...podcasts.map((podcast, index) => formatPodcast(podcast, index + 1))
-                //     );
-                // }
-                sections.push('\nTap on any "Listen" link to play on radiofm.co');
-                const resultText = sections.join('\n');
+            if (name !== "search_radio_stations")
+                throw new Error(`Unknown tool: ${name}`);
+            const query = args?.query;
+            if (!query)
+                throw new Error("Search query is required");
+            const response = await axios.get(`${RADIOFM_API_BASE}/new_combo_search.php`, { params: { srch: query }, timeout: 15000 });
+            const apiData = response.data;
+            if (apiData.data.ErrorCode !== 0)
+                throw new Error(apiData.data.ErrorMessage);
+            const results = apiData.data.Data;
+            if (!results?.length)
                 return res.json({
-                    jsonrpc: '2.0',
+                    jsonrpc: "2.0",
                     id,
                     result: {
                         content: [
                             {
-                                type: 'text',
-                                text: resultText
-                            }
-                        ]
-                    }
+                                type: "text",
+                                text: `🔍 No results found for "${query}". Try station name, country, language, or genre.`,
+                            },
+                        ],
+                    },
                 });
+            const sections = [`Search Results for "${query}"`];
+            const radioData = results.find((r) => r.type === "radio");
+            if (radioData && radioData.data.length > 0) {
+                const stations = radioData.data;
+                sections.push(`\nRADIO STATIONS (${stations.length})`, ...stations.map((station, i) => formatRadioStation(station, i + 1)));
             }
-            throw new Error(`Unknown tool: ${name}`);
+            const podcastData = results.find((r) => r.type === "podcast");
+            if (podcastData && podcastData.data.length > 0) {
+                const podcasts = podcastData.data;
+                sections.push(`\nPODCASTS (${podcasts.length})`, ...podcasts.map((podcast, i) => formatPodcast(podcast, i + 1)));
+            }
+            sections.push("\nTap on any 'Listen' link to play on RadioFM.");
+            return res.json({
+                jsonrpc: "2.0",
+                id,
+                result: {
+                    content: [{ type: "text", text: sections.join("\n") }],
+                },
+            });
         }
         throw new Error(`Unknown method: ${method}`);
     }
-    catch (error) {
-        console.error('MCP Error:', error);
+    catch (err) {
+        console.error("MCP Error:", err);
         res.json({
-            jsonrpc: '2.0',
-            id: req.body.id,
-            error: {
-                code: -32000,
-                message: error.message || 'Internal server error'
-            }
+            jsonrpc: "2.0",
+            id: req.body?.id || null,
+            error: { code: -32000, message: err.message || "Internal server error" },
         });
     }
 });
-// Start the server
+// Start server
 app.listen(port, () => {
-    console.log(`Radio FM MCP Server running on http://localhost:${port}`);
-    console.log(`MCP endpoint : http://localhost:${port}/mcp`);
+    console.log(`✅ Radio FM MCP Server running on http://localhost:${port}`);
+    console.log(`📡 MCP descriptor: /mcp.json`);
 });
 //# sourceMappingURL=index.js.map
