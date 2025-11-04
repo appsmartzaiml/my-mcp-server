@@ -2,9 +2,9 @@
     "schema_version": "v1",
     "name": "RadioFM",
     "version": "1.0.1",
-    "description": "RadioFM lets ChatGPT search and discover radio stations and podcasts worldwide by name, location, language, or genre. No authentication required.",
+    "description": "Radio FM brings the world’s radio stations and podcasts directly into ChatGPT. Explore live broadcasts from over 200 countries — search by station name, city, country, language, or genre, and instantly discover music, news, talk, and sports channels that suit your mood. Whether you want trending hits, sports or regional talk shows, or local community radio, ChatGPT can use Radio FM to find and play them in real time. No authentication or setup is required — just search and start listening.",
     "api": {
-        "type": "openapi",
+        "type": "mcp",
         "url": "https://my-mcp-server-flame.vercel.app/mcp"
     },
     "auth": "none",
@@ -12,7 +12,7 @@
         "tools": [
             {
                 "name": "search_radio_stations",
-                "description": "Search for radio stations and podcasts worldwide by name, location, language, or genre",
+                "description": "Search and explore live radio stations and podcasts from around the world using the Radio FM app within ChatGPT. Discover trending music, news, and cultural broadcasts across languages, genres, and countries — all seamlessly accessible without sign-in.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
@@ -29,6 +29,8 @@
         ]
     },
     "categories": [
+        "radio",
+        "news",
         "media",
         "entertainment",
         "music"
