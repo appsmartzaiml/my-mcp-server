@@ -19,6 +19,13 @@
             "dest": "dist/index.js"
         },
         {
+            "src": "/mcp.json",
+            "methods": [
+                "GET"
+            ],
+            "dest": "dist/index.js"
+        },
+        {
             "src": "/UpdatedRFMIcon.png",
             "dest": "/public/UpdatedRFMIcon.png"
         },
