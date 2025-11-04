@@ -114,7 +114,7 @@ app.post("/mcp", async (req, res) => {
                 jsonrpc: "2.0",
                 id,
                 result: {
-                    protocolVersion: "2025-11-04",
+                    protocolVersion: "2024-11-05",
                     capabilities: { tools: {} },
                     serverInfo: { name: "radiofm-mcp-server", version: "1.0.1" },
                 },
