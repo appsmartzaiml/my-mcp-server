@@ -37,7 +37,7 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 // Handle preflight
-app.options("*", cors());
+// app.options("/.*/", cors());
 // Health check
 app.get("/", (_req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
