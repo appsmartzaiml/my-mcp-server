@@ -12,7 +12,7 @@
         "tools": [
             {
                 "name": "search_radio_stations",
-                "description": "Search and explore live radio stations and podcasts from around the world using the Radio FM app within ChatGPT. Discover trending music, news, and cultural broadcasts across languages, genres, and countries — all seamlessly accessible without sign-in.",
+                "description": "Search and discover live radio stations and podcasts from across the world by entering a station name, location, country, language, or genre. ChatGPT connects with the Radio FM database to instantly return matching stations you can explore or play — from local favorites to trending global broadcasts.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
