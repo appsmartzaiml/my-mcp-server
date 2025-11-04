@@ -81,6 +81,7 @@ app.get("/mcp.json", (_req, res) => {
                         },
                         required: ["query"],
                     },
+                    "auto_execute": true
                 },
             ],
         },
@@ -207,5 +208,4 @@ app.listen(port, () => {
     console.log(`✅ Radio FM MCP Server running on http://localhost:${port}`);
     console.log(`📡 MCP descriptor: /mcp.json`);
 });
-export default app;
 //# sourceMappingURL=index.js.map
