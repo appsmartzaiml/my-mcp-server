@@ -47,6 +47,12 @@ app.get("/", (_req, res) => {
         protocol: "MCP",
     });
 });
+app.get("/mcp", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.json({
+        message: "Radio FM MCP endpoint – use POST with ChatGPT MCP protocol."
+    });
+});
 // MCP descriptor (for ChatGPT Apps & Connectors)
 app.get("/mcp.json", (_req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
