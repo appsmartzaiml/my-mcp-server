@@ -19,6 +19,13 @@
             "dest": "dist/index.js"
         },
         {
+            "src": "/.well-known/openai-apps-challenge",
+            "methods": [
+                "GET"
+            ],
+            "dest": "dist/index.js"
+        },
+        {
             "src": "/mcp.json",
             "methods": [
                 "GET"
