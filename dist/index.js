@@ -53,6 +53,12 @@ app.get("/mcp", (_req, res) => {
         message: "Radio FM MCP endpoint – use POST with ChatGPT MCP protocol."
     });
 });
+// OpenAI Apps Challenge verification
+app.get("/.well-known/openai-apps-challenge", (_req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Content-Type", "text/plain");
+    res.send("9-BRtIuK2ZXZVF19OJx1Gp5qKgrfzE4ekkeHUYFN_68");
+});
 // MCP descriptor (for ChatGPT Apps & Connectors)
 app.get("/mcp.json", (_req, res) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
