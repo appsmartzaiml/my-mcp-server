@@ -87,7 +87,12 @@ app.get("/mcp.json", (_req, res) => {
                         },
                         required: ["query"],
                     },
-                    "auto_execute": true
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "openWorldHint": true,
+                        "destructiveHint": false
+                    },
+                    // "auto_execute": true
                 },
             ],
         },
@@ -147,6 +152,11 @@ app.post("/mcp", async (req, res) => {
                                 },
                                 required: ["query"],
                             },
+                            "annotations": {
+                                "readOnlyHint": true,
+                                "openWorldHint": true,
+                                "destructiveHint": false
+                            }
                         },
                     ],
                 },
