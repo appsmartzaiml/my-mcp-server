@@ -233,6 +233,11 @@ app.post("/mcp", async (req, res) => {
                                 },
                                 required: ["query"],
                             },
+                            "annotations": {
+                                "readOnlyHint": true,
+                                "openWorldHint": true,
+                                "destructiveHint": false
+                            }
                         },
                     ],
                 },
