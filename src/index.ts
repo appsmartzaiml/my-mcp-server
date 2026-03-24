@@ -162,6 +162,11 @@ app.get("/mcp.json", (_req, res) => {
                         },
                         required: ["query"],
                     },
+                    "annotations": {
+                        "readOnlyHint": true,
+                        "openWorldHint": true,
+                        "destructiveHint": false
+                    },
                     "auto_execute": true
                 },
             ],
