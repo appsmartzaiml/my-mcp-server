@@ -167,7 +167,7 @@ app.get("/mcp.json", (_req, res) => {
                         "openWorldHint": true,
                         "destructiveHint": false
                     },
-                    "auto_execute": true
+                    // "auto_execute": true
                 },
             ],
         },
