@@ -1,7 +1,7 @@
 {
     "schema_version": "v1",
     "name": "RadioFM",
-    "version": "1.0.1",
+    "version": "1.0.2",
     "description": "Radio FM brings the world’s radio stations and podcasts directly into ChatGPT. Explore live broadcasts from over 200 countries — search by station name, city, country, language, or genre, and instantly discover music, news, talk, and sports channels that suit your mood. Whether you want trending hits, sports or regional talk shows, or local community radio, ChatGPT can use Radio FM to find and play them in real time. No authentication or setup is required — just search and start listening.",
     "api": {
         "type": "mcp",
@@ -29,6 +29,14 @@
                     "readOnlyHint": true,
                     "openWorldHint": true,
                     "destructiveHint": false
+                },
+                "_meta": {
+                    "ui": {
+                        "resourceUri": "ui://radiofm/search-results-v2.html"
+                    },
+                    "openai/outputTemplate": "ui://radiofm/search-results-v2.html",
+                    "openai/toolInvocation/invoking": "Searching RadioFM...",
+                    "openai/toolInvocation/invoked": "RadioFM results ready"
                 }
             }
         ]
