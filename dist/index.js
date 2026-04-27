@@ -687,6 +687,7 @@ app.post("/mcp", async (req, res) => {
                         },
                     ],
                     _meta: {
+                        "openai/outputTemplate": RADIOFM_WIDGET_URI,
                         resultCount: {
                             stations: stations.length,
                             podcasts: podcasts.length,
