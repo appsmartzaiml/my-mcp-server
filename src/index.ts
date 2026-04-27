@@ -16,8 +16,71 @@ const MCP_PUBLIC_BASE_URL = MCP_PUBLIC_URL.replace(/\/mcp\/?$/, "");
 const RADIO_FALLBACK_IMAGE_URL = `${MCP_PUBLIC_BASE_URL}/RadioFallback.png`;
 const PODCAST_FALLBACK_IMAGE_URL = `${MCP_PUBLIC_BASE_URL}/PodcastFallback.png`;
 const port = process.env.PORT || 3000;
-const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v2.html";
-const SERVER_VERSION = "1.0.2";
+const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v3.html";
+const SERVER_VERSION = "1.0.3";
+const RADIOFM_OUTPUT_SCHEMA = {
+    type: "object",
+    properties: {
+        query: { type: "string" },
+        stations: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: {
+                    id: { type: "string" },
+                    name: { type: "string" },
+                    logoPath: { type: "string" },
+                    logoUrl: { type: "string" },
+                    fallbackImageUrl: { type: "string" },
+                    url: { type: "string" },
+                    location: { type: "string" },
+                    language: { type: "string" },
+                    genre: { type: "string" },
+                    stream: { type: "string" },
+                    plays: { type: "string" },
+                },
+                required: [
+                    "id",
+                    "name",
+                    "logoPath",
+                    "logoUrl",
+                    "fallbackImageUrl",
+                    "url",
+                    "location",
+                    "language",
+                    "genre",
+                    "stream",
+                    "plays",
+                ],
+            },
+        },
+        podcasts: {
+            type: "array",
+            items: {
+                type: "object",
+                properties: {
+                    id: { type: "string" },
+                    name: { type: "string" },
+                    imageUrl: { type: "string" },
+                    fallbackImageUrl: { type: "string" },
+                    url: { type: "string" },
+                    category: { type: "string" },
+                    language: { type: "string" },
+                },
+                required: [
+                    "id",
+                    "name",
+                    "imageUrl",
+                    "fallbackImageUrl",
+                    "url",
+                    "category",
+                    "language",
+                ],
+            },
+        },
+    },
+    required: ["query", "stations", "podcasts"],
+};
 
 // Interfaces
 interface RadioStation {
@@ -514,6 +577,7 @@ app.get("/mcp.json", (_req, res) => {
                         },
                         required: ["query"],
                     },
+                    outputSchema: RADIOFM_OUTPUT_SCHEMA,
                     "annotations": {
                         "readOnlyHint": true,
                         "openWorldHint": true,
@@ -661,6 +725,7 @@ app.post("/mcp", async (req, res) => {
                                 "openWorldHint": true,
                                 "destructiveHint": false
                             },
+                            outputSchema: RADIOFM_OUTPUT_SCHEMA,
                             _meta: {
                                 ui: { resourceUri: RADIOFM_WIDGET_URI },
                                 "openai/outputTemplate": RADIOFM_WIDGET_URI,

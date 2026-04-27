@@ -37,6 +37,14 @@
             "dest": "/public/UpdatedRFMIcon.png"
         },
         {
+            "src": "/RadioFallback.png",
+            "dest": "/public/RadioFallback.png"
+        },
+        {
+            "src": "/PodcastFallback.png",
+            "dest": "/public/PodcastFallback.png"
+        },
+        {
             "src": "/(.*)",
             "dest": "dist/index.js"
         }
