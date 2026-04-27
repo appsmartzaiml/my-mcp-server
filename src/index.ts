@@ -16,8 +16,8 @@ const MCP_PUBLIC_BASE_URL = MCP_PUBLIC_URL.replace(/\/mcp\/?$/, "");
 const RADIO_FALLBACK_IMAGE_URL = `${MCP_PUBLIC_BASE_URL}/RadioFallback.png`;
 const PODCAST_FALLBACK_IMAGE_URL = `${MCP_PUBLIC_BASE_URL}/PodcastFallback.png`;
 const port = process.env.PORT || 3000;
-const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v3.html";
-const SERVER_VERSION = "1.0.3";
+const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v4.html";
+const SERVER_VERSION = "1.0.4";
 const RADIOFM_OUTPUT_SCHEMA = {
     type: "object",
     properties: {
@@ -668,6 +668,7 @@ app.post("/mcp", async (req, res) => {
                             _meta: {
                                 ui: {
                                     prefersBorder: true,
+                                    domain: MCP_PUBLIC_BASE_URL,
                                     csp: {
                                         resourceDomains: [
                                             "https://dpi4fupzvxbqq.cloudfront.net",
@@ -680,6 +681,7 @@ app.post("/mcp", async (req, res) => {
                                 "openai/widgetDescription":
                                     "Interactive RadioFM search results with clickable station logos and listen links.",
                                 "openai/widgetPrefersBorder": true,
+                                "openai/widgetDomain": MCP_PUBLIC_BASE_URL,
                                 "openai/widgetCSP": {
                                     resource_domains: [
                                         "https://dpi4fupzvxbqq.cloudfront.net",
