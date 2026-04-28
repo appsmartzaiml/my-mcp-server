@@ -103,8 +103,30 @@ function absoluteUrl(baseUrl, pathOrUrl) {
     return `${baseUrl.replace(/\/$/, "")}/${pathOrUrl.replace(/^\//, "")}`;
 }
 function stationWebsiteUrl(station) {
-    const url = station.deeplink || `https://appradiofm.com/radioplay/${station.st_shorturl}`;
+    const url = `https://appradiofm.com/radioplay/${station.st_shorturl}` || station.deeplink;
     return url.replace(/^http:\/\/appradiofm\.com/i, "https://appradiofm.com");
+}
+function podcastImageRouteParam(imageUrl) {
+    if (!imageUrl)
+        return "";
+    try {
+        const parsedUrl = new URL(imageUrl, RADIOFM_LOGO_BASE);
+        const filename = parsedUrl.pathname.split("/").filter(Boolean).pop() || "";
+        return filename.replace(/\./g, "-");
+    }
+    catch {
+        const filename = imageUrl.split(/[?#]/, 1)[0].split("/").filter(Boolean).pop() || "";
+        return filename.replace(/\./g, "-");
+    }
+}
+function podcastWebsiteUrl(podcast) {
+    const imageParam = podcastImageRouteParam(podcast.p_image);
+    if (!podcast.p_id || !imageParam || !podcast.p_name || !podcast.cat_name) {
+        return podcast.deeplink;
+    }
+    const routeParts = [podcast.p_id, imageParam, podcast.p_name, podcast.cat_name]
+        .map((part) => encodeURIComponent(part));
+    return `https://appradiofm.com/pdetail/${routeParts.join("/")}`;
 }
 function formatCount(value) {
     const parsed = Number.parseInt(value || "0", 10);
@@ -131,7 +153,7 @@ function buildPodcastViews(podcasts) {
         name: podcast.p_name,
         imageUrl: absoluteUrl(RADIOFM_LOGO_BASE, podcast.p_image),
         fallbackImageUrl: PODCAST_FALLBACK_IMAGE_URL,
-        url: podcast.deeplink,
+        url: podcastWebsiteUrl(podcast),
         category: podcast.cat_name,
         language: podcast.p_lang,
     }));
