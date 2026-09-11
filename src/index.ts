@@ -194,6 +194,9 @@ interface StationView {
     genre: string;
     stream: string;
     plays: string;
+    playCount: number;
+    /** Null when the API that served the results has no real favourite count. */
+    favouriteCount: number | null;
 }
 
 interface PodcastView {
@@ -1443,7 +1446,48 @@ async function comboSearchWithFallback(
     return { stations: [], podcasts: [], endpoint: RADIO_FILTER_PATH };
 }
 
-function buildStationViews(stations: RadioStation[]): StationView[] {
+// "Warschaw, Warschaw, Poland" -> "Warschaw, Poland": drop the state when it repeats the city.
+function stationLocation(station: RadioStation): string {
+    const city = titleCaseIfLower(station.st_city);
+    let state = titleCaseIfLower(station.st_state);
+    if (state.toLowerCase() === city.toLowerCase()) state = "";
+    const country = titleCaseIfLower(station.country_name_rs) || countryNameFromCode(station.st_country);
+    return [city, state, country].filter(Boolean).join(", ");
+}
+
+// The combo search API sends places all lowercase ("lesser poland"). Text that
+// already has capitals ("USA", "Kraków") is left as the API wrote it.
+function titleCaseIfLower(value: string | undefined): string {
+    const trimmed = (value || "").trim();
+    if (trimmed !== trimmed.toLowerCase()) return trimmed;
+    return trimmed.replace(/(^|[\s\-(])(\p{L})/gu, (_match, lead: string, letter: string) => lead + letter.toUpperCase());
+}
+
+const REGION_NAMES = new Intl.DisplayNames(["en"], { type: "region" });
+
+// The combo search API often leaves city/state/country blank but always sends
+// st_country ("gb"), so the card can still show "United Kingdom".
+function countryNameFromCode(code: string | undefined): string {
+    const upper = (code || "").trim().toUpperCase();
+    if (!/^[A-Z]{2}$/.test(upper)) return "";
+    try {
+        const name = REGION_NAMES.of(upper) || "";
+        return name === upper ? "" : name;
+    } catch {
+        return "";
+    }
+}
+
+function countValue(value: string | undefined): number {
+    const parsed = Number.parseInt(value || "0", 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+}
+
+/**
+ * showFavourites: only the radio agent API sends real favourite counts - the
+ * vector /rd and combo APIs send "0" for every station, so the card hides them.
+ */
+function buildStationViews(stations: RadioStation[], showFavourites: boolean): StationView[] {
     return stations.map((station) => ({
         id: station.st_id,
         name: station.st_name,
@@ -1451,11 +1495,14 @@ function buildStationViews(stations: RadioStation[]): StationView[] {
         logoUrl: absoluteUrl(RADIOFM_LOGO_BASE, station.st_logo),
         fallbackImageUrl: RADIO_FALLBACK_IMAGE_URL,
         url: stationWebsiteUrl(station),
-        location: [station.st_city, station.st_state, station.country_name_rs].filter(Boolean).join(", "),
+        location: stationLocation(station),
         language: station.language,
-        genre: station.st_genre,
-        stream: `${station.stream_type} ${station.stream_bitrate}kbps`,
+        // Cards show one line of genres; the first three are enough.
+        genre: (station.st_genre || "").split(",").map((genre) => genre.trim()).filter(Boolean).slice(0, 3).join(", "),
+        stream: `${(station.stream_type || "").toUpperCase()} ${station.stream_bitrate}kbps`,
         plays: formatCount(station.st_play_cnt),
+        playCount: countValue(station.st_play_cnt),
+        favouriteCount: showFavourites ? countValue(station.st_fav_cnt) : null,
     }));
 }
 
@@ -1507,13 +1554,21 @@ function buildRadioFmWidgetHtml(): string {
     .sectionTitle { font-size: 16px; line-height: 1.25; margin: 18px 0 10px; }
     .count { color: #777; font-weight: 500; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
-    .card { border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; min-width: 0; }
+    .card { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; min-width: 0; }
+    .card > * { max-width: 100%; }
     .logoButton { display: block; width: 100%; padding: 0; border: 0; background: #f6f7f9; border-radius: 4px; cursor: pointer; }
     .logo { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: contain; border-radius: 4px; }
-    .name { font-size: 15px; line-height: 1.3; margin: 10px 0 4px; overflow-wrap: anywhere; }
+    .name { font-size: 15px; line-height: 1.3; margin: 10px 0 4px; width: 100%; min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .meta { font-size: 12px; line-height: 1.4; margin: 0 0 6px; color: #555; overflow-wrap: anywhere; }
+    .oneLine { width: 100%; min-height: 1.4em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .card .listen { margin-top: auto; }
+    .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+    .stat { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; cursor: default; }
+    .stat svg { width: 12px; height: 12px; flex: none; }
+    .stat.plays { background: #F1ECFE; color: #5B3FD6; }
+    .stat.favs { background: #FDECEF; color: #D6336C; }
     .subtle { color: #777; }
-    .listen { display: inline-block; background: #ff6b6b; color: #fff; border: 0; padding: 8px 14px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .listen { display: inline-block; background: linear-gradient(to bottom, #865AF7, #2C5BD1); color: #fff; border: 0; padding: 8px 14px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
     .loadMore { margin: 12px 0 4px; background: #171717; color: #fff; border: 0; padding: 8px 14px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
     .skeleton { position: relative; overflow: hidden; background: #eee; border-radius: 4px; }
     .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.72), transparent); animation: shimmer 1.2s infinite; }
@@ -1571,8 +1626,38 @@ function buildRadioFmWidgetHtml(): string {
       const el = document.createElement(tag);
       el.className = className;
       el.textContent = text(value);
+      el.title = text(value);
       parent.appendChild(el);
       return el;
+    }
+
+    const STAT_ICONS = {
+      plays: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M8 5.5v13a1 1 0 0 0 1.52.85l10.4-6.5a1 1 0 0 0 0-1.7L9.52 4.65A1 1 0 0 0 8 5.5z"/></svg>',
+      favs: '<svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 20.6s-7.4-4.5-9.2-9.3C1.6 8 3.7 4.6 7.1 4.6c2 0 3.5 1.1 4.9 2.8 1.4-1.7 2.9-2.8 4.9-2.8 3.4 0 5.5 3.4 4.3 6.7-1.8 4.8-9.2 9.3-9.2 9.3z"/></svg>'
+    };
+    const compactNumber = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
+
+    // Pill with an icon and a short count ("86.3M"); the exact figure is in the tooltip.
+    function appendStat(parent, kind, count, label) {
+      const value = Number(count) || 0;
+      const el = document.createElement("span");
+      el.className = "stat " + kind;
+      el.title = value.toLocaleString("en") + " " + label;
+      el.setAttribute("aria-label", el.title);
+      el.innerHTML = STAT_ICONS[kind];
+      const number = document.createElement("span");
+      number.textContent = compactNumber.format(value);
+      el.appendChild(number);
+      parent.appendChild(el);
+    }
+
+    function appendStationStats(card, station) {
+      const row = document.createElement("div");
+      row.className = "stats";
+      appendStat(row, "plays", station.playCount, "plays");
+      // Only the radio-only APIs send a real favourite count; the server leaves it null otherwise.
+      if (station.favouriteCount != null) appendStat(row, "favs", station.favouriteCount, "favourites");
+      card.appendChild(row);
     }
 
     function setHidden(el, hidden) {
@@ -1680,9 +1765,10 @@ function buildRadioFmWidgetHtml(): string {
         card.appendChild(logoButton);
 
         appendText(card, "h2", "name", station.name);
-        appendText(card, "p", "meta", station.location);
-        appendText(card, "p", "meta", [station.language, station.genre].filter(Boolean).join(" - "));
-        appendText(card, "p", "meta subtle", [station.stream, station.plays ? station.plays + " plays" : ""].filter(Boolean).join(" - "));
+        appendText(card, "p", "meta oneLine", station.location);
+        appendText(card, "p", "meta oneLine", [station.language, station.genre].filter(Boolean).join(" - "));
+        appendText(card, "p", "meta subtle oneLine", station.stream);
+        appendStationStats(card, station);
 
         const listen = document.createElement("button");
         listen.className = "listen";
@@ -1721,7 +1807,7 @@ function buildRadioFmWidgetHtml(): string {
         card.appendChild(imageButton);
 
         appendText(card, "h2", "name", podcast.name);
-        appendText(card, "p", "meta", [podcast.category, podcast.language].filter(Boolean).join(" - "));
+        appendText(card, "p", "meta oneLine", [podcast.category, podcast.language].filter(Boolean).join(" - "));
 
         const listen = document.createElement("button");
         listen.className = "listen";
@@ -2078,7 +2164,7 @@ app.post("/mcp", async (req, res) => {
                 });
             }
 
-            const stationViews = buildStationViews(stations);
+            const stationViews = buildStationViews(stations, endpoint === RFM_AGENT_PATH);
             const podcastViews = buildPodcastViews(podcasts);
             const textSummary = buildTextSummary(query, stations, podcasts);
 
