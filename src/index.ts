@@ -5,9 +5,6 @@ import { existsSync, readFileSync } from "fs";
 
 loadEnvFile();
 
-const RADIOFM_API_BASE =
-    process.env.radiofm_api_base ||
-    "https://a.rgapi.com/rfm/api";
 const RADIOFM_LOGO_BASE = "https://dpi4fupzvxbqq.cloudfront.net/rfm";
 const MCP_PUBLIC_URL =
     process.env.mcp_public_url ||
@@ -15,71 +12,125 @@ const MCP_PUBLIC_URL =
 const MCP_PUBLIC_BASE_URL = MCP_PUBLIC_URL.replace(/\/mcp\/?$/, "");
 const RADIO_FALLBACK_IMAGE_URL = `${MCP_PUBLIC_BASE_URL}/RadioFallback.png`;
 const PODCAST_FALLBACK_IMAGE_URL = `${MCP_PUBLIC_BASE_URL}/PodcastFallback.png`;
+// Image hosts allowed by the widget CSP - these skip the /pimg proxy.
+const DIRECT_IMAGE_ORIGINS = new Set([
+    "https://dpi4fupzvxbqq.cloudfront.net",
+    "https://d3t3ozftmdmh3i.cloudfront.net",
+    new URL(MCP_PUBLIC_BASE_URL).origin,
+]);
 const port = process.env.PORT || 3000;
-const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v4.html";
-const SERVER_VERSION = "1.0.4";
+const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v5.html";
+const SERVER_VERSION = "1.1.0";
+const RADIOFM_TOOL_DESCRIPTION = [
+    "Search live radio stations and podcasts worldwide from the Radio FM catalogue.",
+    "Radio-only requests hit the radio filter, podcast-only requests hit the podcast filter,",
+    "and anything else runs a combined search.",
+    "",
+    "FILTER RULE - CRITICAL: only populate a filter the user EXPLICITLY mentioned.",
+    "Never infer one filter from another: a city does not imply a state, and a country does",
+    "not imply a language (India does NOT mean Hindi).",
+    "Do not copy a location, language or genre into `query` - each belongs in its own field.",
+    "`query` is for a station or podcast NAME only; leave it empty for any browse request.",
+    "",
+    "Examples:",
+    '  "stations in Mumbai"      -> city="Mumbai", content_type="radio"',
+    '  "radio in Texas"          -> state="Texas", content_type="radio"',
+    '  "top radio"               -> query="", content_type="radio" (no limit - return the full list)',
+    '  "top 10 radio stations"   -> query="", limit=10, content_type="radio"',
+    '  "top radio in India"      -> query="", loc="IN", content_type="radio"',
+    '  "hindi stations in Delhi" -> city="Delhi", lc="hi", content_type="radio"',
+    '  "jazz stations"           -> genre="jazz", content_type="radio"',
+    '  "most favourite radio in India" -> query="", loc="IN", sort="favourites", content_type="radio"',
+    '  "indian podcasts"         -> query="", loc="IN", content_type="podcast"',
+    '  "comedy podcasts"         -> query="", genre="comedy", content_type="podcast"',
+    '  "hindi podcasts"          -> query="", lc="hi", content_type="podcast"',
+    '  "podcasts from Noida"     -> query="", city="Noida", state="Uttar Pradesh", loc="IN", content_type="podcast"',
+    '  "Saharanpur radio"        -> query="", city="Saharanpur", state="Uttar Pradesh", loc="IN", content_type="radio"',
+    "",
+    "When a city is named, ALWAYS fill in the wider places it sits in too: `state`",
+    "and `loc` (Saharanpur -> city=\"Saharanpur\", state=\"Uttar Pradesh\", loc=\"IN\").",
+    "A small city often has no stations of its own, and those wider fields are what",
+    "the search falls back to. Spell the state out in full - \"Uttar Pradesh\", not \"UP\".",
+    '  "BBC"                     -> query="BBC" (everything else empty)',
+    "",
+    "Only set `limit` when the user asked for a specific number. A plain \"top radio\"",
+    "request wants the full list, not one station.",
+].join("\n");
+
+const RADIOFM_INPUT_SCHEMA = {
+    type: "object",
+    properties: {
+        query: {
+            type: "string",
+            description:
+                "Free-text part of the search only - a station or podcast name (e.g. 'BBC', 'Vividh Bharati'). Leave empty for a browse request such as 'top radio stations in India' - a city, state, country, language or genre belongs in its own field, never here.",
+        },
+        content_type: {
+            type: "string",
+            enum: ["radio", "podcast", "any"],
+            description:
+                "'radio' when the user asked for radio/stations/FM, 'podcast' when they asked for podcasts/episodes, otherwise 'any'.",
+        },
+        loc: {
+            type: "string",
+            description:
+                "ISO country code, e.g. 'IN' for India, 'US', 'GB', 'AU'. Only when a country is explicitly named.",
+        },
+        lc: {
+            type: "string",
+            description:
+                "Language, e.g. 'hi'/'hindi' or 'en'/'english'. Only when a language is explicitly named - a country never implies a language.",
+        },
+        city: {
+            type: "string",
+            description:
+                "City name such as 'Mumbai', 'Saharanpur' or 'Albany'. Only when a city is explicitly named - always set `state` and `loc` for it as well, so a city with no stations can fall back to its state and country.",
+        },
+        state: {
+            type: "string",
+            description:
+                "State or province, spelled out in full - 'Texas', 'Uttar Pradesh', 'Maharashtra'. Never an abbreviation such as 'UP' or 'TX'. Set it whenever a state OR a city is named, along with `loc`.",
+        },
+        genre: {
+            type: "string",
+            description:
+                "Genre for radio, or podcast category (comedy, true crime, history, technology, news & politics, sports, music, ...). Only when explicitly mentioned.",
+        },
+        freq: {
+            type: "string",
+            description: "Broadcast frequency such as '92.7', '94.3' or '1605'.",
+        },
+        callsign: {
+            type: "string",
+            description: "Station callsign such as 'WASP' or 'WAMC'.",
+        },
+        sort: {
+            type: "string",
+            enum: ["popular", "favourites"],
+            description:
+                "'favourites' only when the user asked for the most favourited/liked/loved stations. Otherwise leave unset - results are ranked by play count.",
+        },
+        limit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 100,
+            description: "How many results to return. Set to 10 for 'top 10', and so on.",
+        },
+    },
+    required: ["query"],
+};
+
+// Only counts are advertised to the model. The station and podcast rows travel in
+// _meta so the model cannot re-list what the widget already renders.
 const RADIOFM_OUTPUT_SCHEMA = {
     type: "object",
     properties: {
         query: { type: "string" },
-        stations: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: {
-                    id: { type: "string" },
-                    name: { type: "string" },
-                    logoPath: { type: "string" },
-                    logoUrl: { type: "string" },
-                    fallbackImageUrl: { type: "string" },
-                    url: { type: "string" },
-                    location: { type: "string" },
-                    language: { type: "string" },
-                    genre: { type: "string" },
-                    stream: { type: "string" },
-                    plays: { type: "string" },
-                },
-                required: [
-                    "id",
-                    "name",
-                    "logoPath",
-                    "logoUrl",
-                    "fallbackImageUrl",
-                    "url",
-                    "location",
-                    "language",
-                    "genre",
-                    "stream",
-                    "plays",
-                ],
-            },
-        },
-        podcasts: {
-            type: "array",
-            items: {
-                type: "object",
-                properties: {
-                    id: { type: "string" },
-                    name: { type: "string" },
-                    imageUrl: { type: "string" },
-                    fallbackImageUrl: { type: "string" },
-                    url: { type: "string" },
-                    category: { type: "string" },
-                    language: { type: "string" },
-                },
-                required: [
-                    "id",
-                    "name",
-                    "imageUrl",
-                    "fallbackImageUrl",
-                    "url",
-                    "category",
-                    "language",
-                ],
-            },
-        },
+        mode: { type: "string", enum: ["radio", "podcast", "any"] },
+        stationCount: { type: "integer" },
+        podcastCount: { type: "integer" },
     },
-    required: ["query", "stations", "podcasts"],
+    required: ["query", "stationCount", "podcastCount"],
 };
 
 // Interfaces
@@ -182,8 +233,14 @@ function absoluteUrl(baseUrl: string, pathOrUrl: string | undefined): string {
 }
 
 function stationWebsiteUrl(station: RadioStation): string {
-    const url = `https://appradiofm.com/radioplay/${station.st_shorturl}` || station.deeplink;
-    return url.replace(/^http:\/\/appradiofm\.com/i, "https://appradiofm.com");
+    // st_shorturl is a full short link ("http://rdo.fm/r/e3vvj") on the vector
+    // API and a bare slug on the legacy one - the play page wants the slug.
+    const slug = (station.st_shorturl || "").split(/[?#]/, 1)[0].split("/").filter(Boolean).pop() || "";
+    if (slug) return `https://appradiofm.com/radioplay/${slug}`;
+
+    // The vector API sometimes double-prefixes the host in deeplink.
+    const deeplink = (station.deeplink || "").replace(/^https?:\/\/appradiofm\.com(?=https?:\/\/)/i, "");
+    return deeplink.replace(/^http:\/\/appradiofm\.com/i, "https://appradiofm.com");
 }
 
 function podcastImageRouteParam(imageUrl: string | undefined): string {
@@ -202,7 +259,8 @@ function podcastImageRouteParam(imageUrl: string | undefined): string {
 function podcastWebsiteUrl(podcast: Podcast): string {
     const imageParam = podcastImageRouteParam(podcast.p_image);
     if (!podcast.p_id || !imageParam || !podcast.p_name || !podcast.cat_name) {
-        return podcast.deeplink;
+        // The vector API omits deeplink, so fall back to podcast search on the site.
+        return podcast.deeplink || `https://appradiofm.com/search/${encodeURIComponent(podcast.p_name || "")}`;
     }
 
     const routeParts = [podcast.p_id, imageParam, podcast.p_name, podcast.cat_name]
@@ -213,6 +271,1176 @@ function podcastWebsiteUrl(podcast: Podcast): string {
 function formatCount(value: string | undefined): string {
     const parsed = Number.parseInt(value || "0", 10);
     return Number.isFinite(parsed) ? parsed.toLocaleString() : "0";
+}
+
+
+// ---------------------------------------------------------------------------
+// RFM vector search API (radio filter / podcast filter / combo search)
+// ---------------------------------------------------------------------------
+
+const RFM_VECTOR_BASE = (process.env.rfm_vector_base || "https://rfmvector.appradiofm.com").replace(/\/$/, "");
+const RADIO_FILTER_PATH = "/api/v1/rd";
+const PODCAST_FILTER_PATH = "/api/v1/pd";
+const COMBO_SEARCH_PATH = "/api/v1/search";
+
+// Hybrid (dense+sparse) podcast search. Separate host from the vector API.
+const AIPD_SEARCH_BASE = (process.env.aipd_search_base || "https://aipd-search.appradiofm.com").replace(/\/$/, "");
+const AIPD_PODCAST_PATH = "/api/v1/search/pd2";
+const AIPD_COLLECTION_NAME = "podcast";
+
+// Overall podcast search. Every parameter is optional and works on its own, so a
+// filter-only browse needs no stand-in search term.
+const RG_PODCAST_BASE = (process.env.rg_podcast_base || "https://devappradiofm.radiofm.co").replace(/\/$/, "");
+const RG_PODCAST_PATH = "/rfm/api/podcast/rg_overall_search.php";
+
+// Filter-driven radio browse API: no free-text search, but it returns the whole
+// matching set (ranked by play count) instead of a handful of vector hits.
+const RFM_AGENT_BASE = (process.env.rfm_agent_base || "https://devappradiofm.radiofm.co").replace(/\/$/, "");
+const RFM_AGENT_PATH = "/rfm/api/rfm_mcp_agent.php";
+// fc=1 ranks by favourite count. It is sent only when the user asked for
+// favourites; otherwise the parameter is left off and the API ranks by plays.
+const DEFAULT_RESULT_LIMIT = 40;
+const MAX_RESULT_LIMIT = 100;
+const RFM_DEVICE = "android";
+
+type SearchMode = "radio" | "podcast" | "any";
+
+interface SearchFilters {
+    srch: string;
+    loc: string;
+    lc: string;
+    city: string;
+    state: string;
+    genre: string;
+    freq: string;
+    callsign: string;
+    limit: number;
+    explore: boolean;
+    favourites: boolean;
+}
+
+interface SearchIntent extends SearchFilters {
+    mode: SearchMode;
+}
+
+const COUNTRY_NAME_TO_ISO: Record<string, string> = {
+    "ascension island": "AC",
+    "andorra": "AD",
+    "united arab emirates": "AE",
+    "afghanistan": "AF",
+    "antigua and barbuda": "AG",
+    "anguilla": "AI",
+    "albania": "AL",
+    "armenia": "AM",
+    "netherlands antilles": "AN",
+    "angola": "AO",
+    "antarctica": "AQ",
+    "argentina": "AR",
+    "american samoa": "AS",
+    "austria": "AT",
+    "australia": "AU",
+    "aruba": "AW",
+    "azerbaijan": "AZ",
+    "bosnia and herzegovina": "BA",
+    "barbados": "BB",
+    "bangladesh": "BD",
+    "belgium": "BE",
+    "burkina faso": "BF",
+    "bulgaria": "BG",
+    "bahrain": "BH",
+    "burundi": "BI",
+    "benin": "BJ",
+    "bermuda": "BM",
+    "brunei": "BN",
+    "bolivia": "BO",
+    "bonaire": "BQ",
+    "brazil": "BR",
+    "bahamas": "BS",
+    "bhutan": "BT",
+    "bouvet island": "BV",
+    "botswana": "BW",
+    "belarus": "BY",
+    "belize": "BZ",
+    "canada": "CA",
+    "cocos (keeling) islands": "CC",
+    "democratic republic of the congo": "CD",
+    "central african republic": "CF",
+    "republic of the congo": "CG",
+    "switzerland": "CH",
+    "ivory coast": "CI",
+    "cook islands": "CK",
+    "chile": "CL",
+    "cameroon": "CM",
+    "china": "CN",
+    "colombia": "CO",
+    "costa rica": "CR",
+    "cuba": "CU",
+    "cape verde": "CV",
+    "curacao": "CW",
+    "christmas island": "CX",
+    "cyprus": "CY",
+    "czech republic": "CZ",
+    "germany": "DE",
+    "diego garcia": "DG",
+    "djibouti": "DJ",
+    "denmark": "DK",
+    "dominica islands": "DM",
+    "dominican republic": "DO",
+    "algeria": "DZ",
+    "ecuador": "EC",
+    "estonia": "EE",
+    "egypt": "EG",
+    "western sahara": "EH",
+    "eritrea": "ER",
+    "spain": "ES",
+    "ethiopia": "ET",
+    "finland": "FI",
+    "fiji": "FJ",
+    "falkland islands (malvinas)": "FK",
+    "micronesia": "FM",
+    "faroe islands": "FO",
+    "france": "FR",
+    "france metropolitan": "FX",
+    "gabon": "GA",
+    "united kingdom": "GB",
+    "scotland": "GB-SCT",
+    "grenada": "GD",
+    "georgia": "GE",
+    "french guiana": "GF",
+    "guernsey": "GG",
+    "ghana": "GH",
+    "gibraltar": "GI",
+    "greenland": "GL",
+    "gambia": "GM",
+    "guinea": "GN",
+    "guadeloupe": "GP",
+    "equatorial guinea": "GQ",
+    "greece": "GR",
+    "south georgia and the south sandwich islands": "GS",
+    "guatemala": "GT",
+    "guam": "GU",
+    "guinea bissau": "GW",
+    "guyana": "GY",
+    "hong kong": "HK",
+    "heard & mcdonald islands": "HM",
+    "honduras": "HN",
+    "croatia": "HR",
+    "haiti": "HT",
+    "hungary": "HU",
+    "indonesia": "ID",
+    "ireland": "IE",
+    "israel": "IL",
+    "isle of man": "IM",
+    "india": "IN",
+    "british indian ocean territory": "IO",
+    "iraq": "IQ",
+    "iran": "IR",
+    "iceland": "IS",
+    "italy": "IT",
+    "jamaica": "JM",
+    "jordan": "JO",
+    "japan": "JP",
+    "kenya": "KE",
+    "kyrgyzstan": "KG",
+    "cambodia": "KH",
+    "kiribati": "KI",
+    "comoros": "KM",
+    "st. kitts and nevis": "KN",
+    "north korea": "KP",
+    "south korea": "KR",
+    "kuwait": "KW",
+    "cayman islands": "KY",
+    "kazakhstan": "KZ",
+    "lao people s democratic republic": "LA",
+    "lebanon": "LB",
+    "saint lucia": "LC",
+    "liechtenstein": "LI",
+    "sri lanka": "LK",
+    "liberia": "LR",
+    "lesotho": "LS",
+    "lithuania": "LT",
+    "luxembourg": "LU",
+    "latvia": "LV",
+    "state of libya": "LY",
+    "morocco": "MA",
+    "monaco": "MC",
+    "moldova": "MD",
+    "montenegro": "ME",
+    "madagascar": "MG",
+    "marshall islands": "MH",
+    "republic of macedonia": "MK",
+    "mali": "ML",
+    "myanmar (burma)": "MM",
+    "mongolia": "MN",
+    "macau": "MO",
+    "northern mariana islands": "MP",
+    "martinique": "MQ",
+    "mauritania": "MR",
+    "montserrat": "MS",
+    "malta": "MT",
+    "mauritius": "MU",
+    "maldives": "MV",
+    "malawi": "MW",
+    "mexico": "MX",
+    "malaysia": "MY",
+    "mozambique": "MZ",
+    "namibia": "NA",
+    "new caledonia": "NC",
+    "niger": "NE",
+    "norfolk island": "NF",
+    "nigeria": "NG",
+    "nicaragua": "NI",
+    "netherlands": "NL",
+    "norway": "NO",
+    "nepal": "NP",
+    "nauru": "NR",
+    "niue": "NU",
+    "new zealand": "NZ",
+    "oman": "OM",
+    "panama": "PA",
+    "peru": "PE",
+    "french polynesia": "PF",
+    "papua new guinea": "PG",
+    "philippines": "PH",
+    "pakistan": "PK",
+    "poland": "PL",
+    "st. pierre & miquelon": "PM",
+    "pitcairn": "PN",
+    "puerto rico": "PR",
+    "palestine": "PS",
+    "portugal": "PT",
+    "palau": "PW",
+    "paraguay": "PY",
+    "qatar": "QA",
+    "r union": "RE",
+    "romania": "RO",
+    "rest of world": "ROW",
+    "serbia": "RS",
+    "russia": "RU",
+    "rwanda": "RW",
+    "saudi arabia": "SA",
+    "solomon islands": "SB",
+    "seychelles": "SC",
+    "sudan": "SD",
+    "sweden": "SE",
+    "singapore": "SG",
+    "st. helena": "SH",
+    "slovenia": "SI",
+    "svalbard & jan mayen islands": "SJ",
+    "slovakia": "SK",
+    "sierra leone": "SL",
+    "san marino": "SM",
+    "senegal": "SN",
+    "somalia": "SO",
+    "suriname": "SR",
+    "south sudan": "SS",
+    "sao tome & principe": "ST",
+    "union of soviet socialist republics": "SU",
+    "el salvador": "SV",
+    "sint maarten": "SX",
+    "syria": "SY",
+    "swaziland": "SZ",
+    "turks & caicos islands": "TC",
+    "chad": "TD",
+    "french southern territories": "TF",
+    "togo": "TG",
+    "thailand": "TH",
+    "tajikistan": "TJ",
+    "tokelau": "TK",
+    "turkmenistan": "TM",
+    "tunisia": "TN",
+    "tonga": "TO",
+    "east timor": "TP",
+    "turkey": "TR",
+    "trinidad and tobago": "TT",
+    "tuvalu": "TV",
+    "taiwan": "TW",
+    "tanzania": "TZ",
+    "ukraine": "UA",
+    "uganda": "UG",
+    "united states minor outlying islands": "UM",
+    "united states of america": "US",
+    "uruguay": "UY",
+    "uzbekistan": "UZ",
+    "vatican city state": "VA",
+    "st. vincent and the grenadines": "VC",
+    "venezuela": "VE",
+    "british virgin islands": "VG",
+    "united states virgin islands": "VI",
+    "vietnam": "VN",
+    "vanuatu": "VU",
+    "wallis & futuna islands": "WF",
+    "samoa": "WS",
+    "ceuta": "XC",
+    "kosovo": "XK",
+    "democratic yemen": "YD",
+    "yemen": "YE",
+    "mayotte": "YT",
+    "yugoslavia": "YU",
+    "south africa": "ZA",
+    "zambia": "ZM",
+    "zaire": "ZR",
+    "zimbabwe": "ZW",
+};
+
+// Everyday names people actually type, mapped onto the ISO codes above.
+const COUNTRY_ALIAS_TO_ISO: Record<string, string> = {
+    "uae": "AE",
+    "emirates": "AE",
+    "usa": "US",
+    "us": "US",
+    "u s a": "US",
+    "america": "US",
+    "united states": "US",
+    "states": "US",
+    "uk": "GB",
+    "u k": "GB",
+    "britain": "GB",
+    "great britain": "GB",
+    "england": "GB",
+    "wales": "GB",
+    "northern ireland": "GB",
+    "scotland": "GB-SCT",
+    "holland": "NL",
+    "russia federation": "RU",
+    "russian federation": "RU",
+    "korea": "KR",
+    "south korea": "KR",
+    "north korea": "KP",
+    "vietnam": "VN",
+    "viet nam": "VN",
+    "laos": "LA",
+    "macedonia": "MK",
+    "north macedonia": "MK",
+    "czechia": "CZ",
+    "burma": "MM",
+    "myanmar": "MM",
+    "ivory coast": "CI",
+    "cote d ivoire": "CI",
+    "cape verde": "CV",
+    "east timor": "TP",
+    "timor leste": "TP",
+    "congo": "CG",
+    "drc": "CD",
+    "dr congo": "CD",
+    "libya": "LY",
+    "vatican": "VA",
+    "syria": "SY",
+    "bosnia": "BA",
+    "brasil": "BR",
+    "deutschland": "DE",
+    "espana": "ES",
+    "bharat": "IN",
+    "bhartiya": "IN",
+    "bharatiya": "IN",
+    "indian": "IN",
+    "hindustan": "IN",
+};
+
+// The podcast search API matches on ISO 639-1 instead, so codes are translated
+// back on the way out.
+const ISO_639_2_TO_1: Record<string, string> = {
+    asm: "as", ara: "ar", ben: "bn", bho: "bh", bul: "bg", chi: "zh", hrv: "hr", ces: "cs",
+    dan: "da", nld: "nl", eng: "en", est: "et", fil: "fil", tgl: "tl", fin: "fi", fra: "fr",
+    deu: "de", ell: "el", guj: "gu", heb: "he", hin: "hi", hun: "hu", ind: "id", ita: "it",
+    jpn: "ja", kan: "kn", kor: "ko", lav: "lv", lit: "lt", msa: "ms", mal: "ml", mar: "mr",
+    nep: "ne", nor: "no", ori: "or", fas: "fa", pol: "pl", por: "pt", pan: "pa", ron: "ro",
+    rus: "ru", srp: "sr", sin: "si", slk: "sk", slv: "sl", spa: "es", swa: "sw", swe: "sv",
+    tam: "ta", tel: "te", tha: "th", tur: "tr", ukr: "uk", urd: "ur", vie: "vi",
+};
+
+// The API matches languages on ISO 639-2 codes (mostly /T, with a few /B).
+// Verified against the live index - "chi" works where "zho" does not.
+const LANGUAGE_TO_ISO_639_2: Record<string, string> = {
+    "assamese": "asm", "as": "asm",
+    "arabic": "ara", "ar": "ara",
+    "bengali": "ben", "bangla": "ben", "bn": "ben",
+    "bhojpuri": "bho",
+    "bulgarian": "bul", "bg": "bul",
+    "chinese": "chi", "mandarin": "chi", "cantonese": "chi", "zh": "chi",
+    "croatian": "hrv", "hr": "hrv",
+    "czech": "ces", "cs": "ces",
+    "danish": "dan", "da": "dan",
+    "dutch": "nld", "nl": "nld",
+    "english": "eng", "en": "eng",
+    "estonian": "est", "et": "est",
+    "filipino": "fil", "tagalog": "tgl",
+    "finnish": "fin", "fi": "fin",
+    "french": "fra", "fr": "fra",
+    "german": "deu", "de": "deu",
+    "greek": "ell", "el": "ell",
+    "gujarati": "guj", "gu": "guj",
+    "hebrew": "heb", "he": "heb",
+    "hindi": "hin", "hi": "hin",
+    "hungarian": "hun", "hu": "hun",
+    "indonesian": "ind", "id": "ind",
+    "italian": "ita", "it": "ita",
+    "japanese": "jpn", "ja": "jpn",
+    "kannada": "kan", "kn": "kan",
+    "korean": "kor", "ko": "kor",
+    "latvian": "lav", "lv": "lav",
+    "lithuanian": "lit", "lt": "lit",
+    "malay": "msa", "ms": "msa",
+    "malayalam": "mal", "ml": "mal",
+    "marathi": "mar", "mr": "mar",
+    "nepali": "nep", "ne": "nep",
+    "norwegian": "nor", "no": "nor",
+    "odia": "ori", "oriya": "ori", "or": "ori",
+    "persian": "fas", "farsi": "fas", "fa": "fas",
+    "polish": "pol", "pl": "pol",
+    "portuguese": "por", "pt": "por",
+    "punjabi": "pan", "panjabi": "pan", "pa": "pan",
+    "romanian": "ron", "ro": "ron",
+    "russian": "rus", "ru": "rus",
+    "serbian": "srp", "sr": "srp",
+    "sinhala": "sin", "si": "sin",
+    "slovak": "slk", "sk": "slk",
+    "slovenian": "slv", "sl": "slv",
+    "spanish": "spa", "castellano": "spa", "es": "spa",
+    "swahili": "swa", "sw": "swa",
+    "swedish": "swe", "sv": "swe",
+    "tamil": "tam", "ta": "tam",
+    "telugu": "tel", "te": "tel",
+    "thai": "tha", "th": "tha",
+    "turkish": "tur", "tr": "tur",
+    "ukrainian": "ukr", "uk": "ukr",
+    "urdu": "urd", "ur": "urd",
+    "vietnamese": "vie", "vi": "vie",
+};
+
+const GENRE_KEYWORDS = [
+    "adult contemporary", "classic rock", "hip hop", "hip-hop", "top 40", "easy listening",
+    "world music", "oldies", "bollywood", "devotional", "spiritual", "religious", "gospel",
+    "classical", "country", "electronic", "dance", "house", "techno", "trance", "reggae",
+    "jazz", "blues", "rock", "metal", "punk", "indie", "alternative", "pop", "rap",
+    "folk", "latin", "salsa", "soul", "funk", "disco", "ambient", "chill", "lounge",
+    "news", "talk", "sports", "business", "comedy", "culture", "education", "kids",
+    "variety", "community", "regional", "traditional", "instrumental", "meditation",
+    "80s", "90s", "70s", "60s", "50s",
+];
+
+// Words that describe the *shape* of the request rather than what to search for.
+const GENERIC_QUERY_TOKENS = new Set([
+    "a", "about", "an", "and", "any", "are", "around", "at", "best", "biggest", "channel",
+    "channels", "chart", "charts", "episode", "episodes", "featuring", "find", "for", "from",
+    "get", "give", "good", "greatest", "hear", "in", "is", "list", "listen", "live", "me",
+    "hits", "music", "my", "near", "of", "on", "online", "play", "please", "podcast",
+    "podcasts", "popular",
+    "program", "programme", "programmes", "programs", "radio", "radios", "rated", "recommend",
+    "regarding", "search", "show", "shows", "some", "station", "stations", "stream",
+    "song", "songs", "streaming", "suggest", "talk", "the", "to", "top", "tracks", "trending",
+    "tune", "want", "what", "which", "world",
+]);
+
+// "most favourited stations" asks for a different ranking, not a different filter.
+const FAVOURITE_INTENT_TOKENS = new Set([
+    "favourite", "favourites", "favourited", "favorite", "favorites", "favorited",
+    "fav", "favs", "liked", "loved", "bookmarked",
+]);
+
+// Podcast category ids accepted by the overall podcast search API.
+const PODCAST_CATEGORY_TO_ID: Record<string, number> = {
+    "comedy": 1,
+    "arts": 2,
+    "games & hobbies": 3,
+    "games and hobbies": 3,
+    "games": 3,
+    "hobbies": 3,
+    "business": 7,
+    "motivation": 8,
+    "religion & spirituality": 9,
+    "religion and spirituality": 9,
+    "religion": 9,
+    "spirituality": 9,
+    "education": 11,
+    "arts and design": 12,
+    "arts & design": 12,
+    "design": 12,
+    "health": 13,
+    "fashion & beauty": 14,
+    "fashion and beauty": 14,
+    "fashion": 14,
+    "beauty": 14,
+    "government & organizations": 16,
+    "government and organizations": 16,
+    "government": 16,
+    "kids & family": 17,
+    "kids and family": 17,
+    "kids": 17,
+    "family": 17,
+    "music": 18,
+    "news & politics": 19,
+    "news and politics": 19,
+    "news": 19,
+    "politics": 19,
+    "science & medicine": 20,
+    "science and medicine": 20,
+    "science": 20,
+    "medicine": 20,
+    "society & culture": 21,
+    "society and culture": 21,
+    "society": 21,
+    "culture": 21,
+    "sports & recreation": 22,
+    "sports and recreation": 22,
+    "sports": 22,
+    "recreation": 22,
+    "tv & film": 23,
+    "tv and film": 23,
+    "tv": 23,
+    "film": 23,
+    "movies": 23,
+    "technology": 24,
+    "tech": 24,
+    "storytelling": 33,
+    "philosophy": 34,
+    "horror and paranormal": 35,
+    "horror & paranormal": 35,
+    "horror and paranomal": 35,
+    "horror": 35,
+    "paranormal": 35,
+    "true crime": 36,
+    "crime": 36,
+    "leisure": 37,
+    "travel": 38,
+    "fiction": 39,
+    "crypto": 40,
+    "cryptocurrency": 40,
+    "marketing": 41,
+    "history": 42,
+};
+
+// Longest first so "true crime" wins over "crime".
+const PODCAST_CATEGORY_MATCH_ORDER = Object.keys(PODCAST_CATEGORY_TO_ID).sort((a, b) => b.length - a.length);
+
+const RADIO_INTENT_TOKENS = new Set([
+    "radio", "radios", "station", "stations", "fm", "am", "channel", "channels",
+    "broadcast", "broadcasts", "callsign", "frequency", "airwaves",
+]);
+
+const PODCAST_INTENT_TOKENS = new Set([
+    "podcast", "podcasts", "episode", "episodes", "audiobook", "audiobooks", "series",
+]);
+
+function normalizeText(value: string): string {
+    return value
+        .toLowerCase()
+        .replace(/[’']/g, " ")
+        .replace(/[^a-z0-9.\- ]+/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+}
+
+/** Turn "India", "IN", "in", "USA" into the ISO code the API expects. */
+function resolveCountryCode(value: string | undefined): string {
+    if (!value) return "";
+
+    const raw = value.trim();
+    if (!raw) return "";
+
+    const upper = raw.toUpperCase();
+    if (COUNTRY_ISO_CODES.has(upper)) return upper;
+
+    const normalized = normalizeText(raw);
+    return COUNTRY_NAME_TO_ISO[normalized] || COUNTRY_ALIAS_TO_ISO[normalized] || "";
+}
+
+/** Turn "Hindi", "hi", "hin" into the 3-letter code the API matches on. */
+function resolveLanguageCode(value: string | undefined): string {
+    if (!value) return "";
+
+    const normalized = normalizeText(value);
+    if (!normalized) return "";
+    if (LANGUAGE_TO_ISO_639_2[normalized]) return LANGUAGE_TO_ISO_639_2[normalized];
+
+    // Already a 3-letter code such as "hin" or "eng".
+    return /^[a-z]{3}$/.test(normalized) ? normalized : "";
+}
+
+function clampLimit(value: unknown, fallback: number): number {
+    const parsed = typeof value === "number" ? value : Number.parseInt(String(value ?? ""), 10);
+    if (!Number.isFinite(parsed)) return fallback;
+    return Math.min(MAX_RESULT_LIMIT, Math.max(1, Math.trunc(parsed)));
+}
+
+const COUNTRY_ISO_CODES = new Set(Object.values(COUNTRY_NAME_TO_ISO));
+
+// Longest first, so "united arab emirates" wins over "united states".
+const COUNTRY_MATCH_ORDER = [
+    ...Object.keys(COUNTRY_NAME_TO_ISO),
+    ...Object.keys(COUNTRY_ALIAS_TO_ISO),
+].sort((a, b) => b.length - a.length);
+
+const LANGUAGE_MATCH_ORDER = Object.keys(LANGUAGE_TO_ISO_639_2)
+    // A bare 2-letter code is too easy to hit by accident inside free text.
+    .filter((name) => name.length > 2)
+    .sort((a, b) => b.length - a.length);
+
+const GENRE_MATCH_ORDER = [...GENRE_KEYWORDS].sort((a, b) => b.length - a.length);
+
+class NotDeployedError extends Error {
+    constructor(path: string) {
+        super(`Endpoint ${path} is not available`);
+        this.name = "NotDeployedError";
+    }
+}
+
+/**
+ * Work out which endpoint to hit and which filters to send.
+ *
+ * Filters supplied by the caller always win; anything left blank is inferred
+ * from the raw query. Inference only ever fires on an explicit mention - a
+ * city never implies a state, and a country never implies a language.
+ */
+function buildSearchIntent(args: Record<string, any>): SearchIntent {
+    const rawQuery = String(args?.query ?? args?.srch ?? "").trim();
+    let working = normalizeText(rawQuery);
+
+    const explicitLoc = resolveCountryCode(args?.loc ?? args?.country);
+    const explicitLc = resolveLanguageCode(args?.lc ?? args?.language);
+    const explicitCity = String(args?.city ?? args?.ct ?? "").trim();
+    const explicitState = String(args?.state ?? args?.st ?? "").trim();
+    const explicitGenre = String(args?.genre ?? "").trim();
+    const explicitFreq = String(args?.freq ?? args?.frequency ?? "").trim();
+    const explicitCallsign = String(args?.callsign ?? "").trim();
+    const explicitType = String(args?.content_type ?? args?.type ?? "").trim().toLowerCase();
+
+    let mode: SearchMode =
+        explicitType === "radio" || explicitType === "podcast" ? explicitType : "any";
+    let limit = clampLimit(args?.limit, 0) || 0;
+    let loc = explicitLoc;
+    let lc = explicitLc;
+    let genre = explicitGenre;
+    let freq = explicitFreq;
+    const callsign = explicitCallsign;
+
+    const cut = (pattern: RegExp): string => {
+        const match = working.match(pattern);
+        if (!match) return "";
+        working = `${working.slice(0, match.index)} ${working.slice((match.index || 0) + match[0].length)}`
+            .replace(/\s+/g, " ")
+            .trim();
+        return match[1] ?? match[0];
+    };
+
+    // "top 10 ...", "10 best ...", "show me 5 stations"
+    if (!limit) {
+        const counted =
+            cut(/\b(?:top|best|first|any)\s+(\d{1,3})\b/) ||
+            cut(/\b(\d{1,3})\s+(?:top|best|good|popular)\b/) ||
+            cut(/\b(\d{1,3})\s+(?:radio|station|stations|podcast|podcasts|channel|channels)\b/);
+        limit = clampLimit(counted, 0) || 0;
+    }
+
+    // A frequency is either decimal (92.7) or carries an FM/AM/MHz marker.
+    if (!freq) {
+        freq =
+            cut(/\b(\d{2,4}\.\d{1,2})\s*(?:fm|am|mhz|khz)?\b/) ||
+            cut(/\b(\d{2,4})\s*(?:fm|am|mhz|khz)\b/) ||
+            "";
+    }
+
+    // Longest country name first so "united arab emirates" beats "united".
+    if (!loc) {
+        for (const name of COUNTRY_MATCH_ORDER) {
+            const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(name)}(?:\\s|$)`);
+            if (pattern.test(working)) {
+                loc = COUNTRY_NAME_TO_ISO[name] || COUNTRY_ALIAS_TO_ISO[name] || "";
+                working = working.replace(pattern, " ").replace(/\s+/g, " ").trim();
+                break;
+            }
+        }
+    }
+
+    if (!lc) {
+        for (const name of LANGUAGE_MATCH_ORDER) {
+            const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(name)}(?:\\s|$)`);
+            if (pattern.test(working)) {
+                lc = LANGUAGE_TO_ISO_639_2[name];
+                working = working.replace(pattern, " ").replace(/\s+/g, " ").trim();
+                break;
+            }
+        }
+    }
+
+    if (!genre) {
+        for (const name of GENRE_MATCH_ORDER) {
+            const pattern = new RegExp(`(?:^|\\s)${escapeRegExp(name)}(?:\\s|$)`);
+            if (pattern.test(working)) {
+                genre = name;
+                working = working.replace(pattern, " ").replace(/\s+/g, " ").trim();
+                break;
+            }
+        }
+    }
+
+    const tokens = working.split(" ").filter(Boolean);
+    const favourites =
+        String(args?.sort ?? "").trim().toLowerCase().startsWith("fav") ||
+        args?.favourites === true ||
+        tokens.some((token) => FAVOURITE_INTENT_TOKENS.has(token));
+
+    if (mode === "any") {
+        const wantsRadio = tokens.some((token) => RADIO_INTENT_TOKENS.has(token));
+        const wantsPodcast = tokens.some((token) => PODCAST_INTENT_TOKENS.has(token));
+        if (wantsRadio && !wantsPodcast) mode = "radio";
+        else if (wantsPodcast && !wantsRadio) mode = "podcast";
+        // A frequency or callsign only ever describes a radio station, and the
+        // "fm" that signalled it has already been consumed by the freq match.
+        else if (!wantsPodcast && (freq || callsign)) mode = "radio";
+    }
+
+    let srch = tokens
+        .filter((token) => !GENERIC_QUERY_TOKENS.has(token) && !FAVOURITE_INTENT_TOKENS.has(token))
+        .join(" ")
+        .trim();
+
+    // "fm"/"am" carry meaning inside a station name ("Red FM") but not on their own.
+    if (/^(?:fm|am|fm am|am fm)$/.test(srch)) srch = "";
+
+    // A filter-only or browse-only request has nothing left to search for.
+    if (!srch && !loc && !lc && !genre && !freq && !callsign && !explicitCity && !explicitState) {
+        return {
+            mode,
+            srch: "",
+            loc: "",
+            lc: "",
+            city: "",
+            state: "",
+            genre: "",
+            freq: "",
+            callsign: "",
+            limit: limit || DEFAULT_RESULT_LIMIT,
+            explore: true,
+            favourites,
+        };
+    }
+
+    return {
+        mode,
+        srch,
+        loc,
+        lc,
+        city: explicitCity,
+        state: explicitState,
+        genre,
+        freq,
+        callsign,
+        // explore=true makes the API ignore every other filter, so it is only
+        // ever used for the unfiltered "just show me something" case above.
+        explore: false,
+        favourites,
+        limit: limit || DEFAULT_RESULT_LIMIT,
+    };
+}
+
+function escapeRegExp(value: string): string {
+    return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function toFormBody(filters: SearchFilters): URLSearchParams {
+    const body = new URLSearchParams();
+    body.set("srch", filters.srch);
+    body.set("device", RFM_DEVICE);
+    body.set("limit", String(filters.limit));
+    if (filters.loc) body.set("loc", filters.loc);
+    if (filters.lc) body.set("lc", filters.lc);
+    if (filters.callsign) body.set("callsign", filters.callsign);
+    if (filters.genre) body.set("genre", filters.genre);
+    if (filters.freq) body.set("freq", filters.freq);
+    if (filters.explore) body.set("explore", "true");
+    return body;
+}
+
+interface SearchResults {
+    stations: RadioStation[];
+    podcasts: Podcast[];
+    /** The endpoint that actually served these results. */
+    endpoint?: string;
+}
+
+function readResults(payload: ApiResponse | undefined): SearchResults {
+    const blocks = payload?.data?.Data;
+    // ErrorCode arrives as a number from the legacy API and a string from the
+    // vector API, and "-1" simply means "nothing matched".
+    if (!blocks?.length || Number(payload?.data?.ErrorCode ?? -1) !== 0) {
+        return { stations: [], podcasts: [] };
+    }
+
+    const radioBlock = blocks.find((block) => block.type === "radio");
+    const podcastBlock = blocks.find((block) => block.type === "podcast");
+
+    return {
+        stations: (radioBlock?.data as RadioStation[] | undefined) || [],
+        podcasts: (podcastBlock?.data as Podcast[] | undefined) || [],
+    };
+}
+
+function isEmpty(results: SearchResults): boolean {
+    return !results.stations.length && !results.podcasts.length;
+}
+
+async function postFilter(path: string, filters: SearchFilters): Promise<SearchResults> {
+    const response = await axios.post<ApiResponse>(
+        `${RFM_VECTOR_BASE}${path}`,
+        toFormBody(filters).toString(),
+        {
+            headers: { "Content-Type": "application/x-www-form-urlencoded" },
+            timeout: 35000,
+            validateStatus: (status) => status < 500,
+        }
+    );
+
+    // /api/v1/pd is not deployed on every environment yet.
+    if (response.status === 404) throw new NotDeployedError(path);
+    return { ...readResults(response.data), endpoint: path };
+}
+
+interface AgentRadioRow {
+    st_id: number | string;
+    st_name: string;
+    st_logo: string;
+    st_weburl: string;
+    st_shorturl: string;
+    st_genre: string;
+    st_lang: string;
+    language: string;
+    st_city: string;
+    st_state: string;
+    country_name: string;
+    st_country: string;
+    st_play_cnt: number | string;
+    st_fav_cnt: number | string;
+    stream_link: string;
+    stream_type: string;
+    stream_bitrate: number | string;
+}
+
+interface AgentRadioResponse {
+    Data?: {
+        ErrorCode?: number | string;
+        ErrorMessage?: string;
+        count?: number;
+        data?: AgentRadioRow[];
+    };
+}
+
+/** The browse API names the country field `country_name`; everything else expects `country_name_rs`. */
+function toRadioStation(row: AgentRadioRow): RadioStation {
+    return {
+        st_id: String(row.st_id ?? ""),
+        st_name: row.st_name,
+        st_logo: row.st_logo,
+        st_weburl: row.st_weburl,
+        st_shorturl: row.st_shorturl,
+        st_genre: row.st_genre,
+        st_lang: row.st_lang,
+        language: row.language,
+        st_bc_freq: "",
+        st_city: row.st_city,
+        st_state: row.st_state,
+        country_name_rs: row.country_name,
+        st_country: row.st_country,
+        st_play_cnt: String(row.st_play_cnt ?? ""),
+        st_fav_cnt: String(row.st_fav_cnt ?? ""),
+        stream_link: row.stream_link,
+        stream_type: row.stream_type,
+        stream_bitrate: String(row.stream_bitrate ?? ""),
+        deeplink: "",
+    };
+}
+
+/**
+ * A city the catalogue has no stations for should fall back to its state, and a
+ * state with none to its country, rather than straight to an unfiltered list.
+ * Each step drops exactly one level of location, and only while a broader one
+ * is still available to fall back to.
+ */
+function radioBrowseSteps(intent: SearchIntent): SearchFilters[] {
+    const base: SearchFilters = { ...intent };
+    const steps: SearchFilters[] = [base];
+
+    if (base.city && (base.state || base.loc)) {
+        steps.push({ ...base, city: "" });
+    }
+    if (base.state && base.loc) {
+        steps.push({ ...base, city: "", state: "" });
+    }
+    // A country with a language or genre that matches nothing there is still
+    // better answered by the whole country than by nothing at all.
+    if (base.loc && (base.lc || base.genre)) {
+        steps.push({ ...base, city: "", state: "", lc: "", genre: "" });
+    }
+
+    return steps;
+}
+
+/**
+ * Radio browse by country / language / city / state / genre. Used for requests
+ * that name filters but no station, where the vector index returns only a few
+ * near matches and the user asked for the full list.
+ */
+async function agentRadioBrowse(filters: SearchFilters): Promise<SearchResults> {
+    const response = await axios.get<AgentRadioResponse>(`${RFM_AGENT_BASE}${RFM_AGENT_PATH}`, {
+        params: {
+            cc: filters.loc || undefined,
+            lc: filters.lc || undefined,
+            gn: filters.genre || undefined,
+            ct: filters.city || undefined,
+            st: filters.state || undefined,
+            fc: filters.favourites ? 1 : undefined,
+            page: 1,
+            limit: filters.limit,
+        },
+        timeout: 35000,
+        validateStatus: (status) => status < 500,
+    });
+
+    if (response.status === 404) throw new NotDeployedError(RFM_AGENT_PATH);
+
+    const rows = response.data?.Data?.data;
+    // This API reports success as ErrorCode 1, unlike the vector API's 0.
+    if (!Array.isArray(rows) || !rows.length) {
+        return { stations: [], podcasts: [], endpoint: RFM_AGENT_PATH };
+    }
+
+    return {
+        stations: rows.filter((row) => row?.st_id).map(toRadioStation),
+        podcasts: [],
+        endpoint: RFM_AGENT_PATH,
+    };
+}
+
+interface RgPodcastResponse {
+    data?: {
+        ErrorCode?: number | string;
+        ErrorMessage?: string;
+        Data?: Podcast[];
+    };
+}
+
+/** Category words map to the numeric cat_id the podcast API filters on. */
+function resolvePodcastCategoryId(...candidates: string[]): number | undefined {
+    for (const candidate of candidates) {
+        const normalized = normalizeText(candidate);
+        if (!normalized) continue;
+
+        const direct = PODCAST_CATEGORY_TO_ID[normalized];
+        if (direct) return direct;
+
+        for (const name of PODCAST_CATEGORY_MATCH_ORDER) {
+            if (new RegExp(`(?:^|\\s)${escapeRegExp(name)}(?:\\s|$)`).test(normalized)) {
+                return PODCAST_CATEGORY_TO_ID[name];
+            }
+        }
+    }
+    return undefined;
+}
+
+/**
+ * Overall podcast search: free text plus country / language / category, any of
+ * which may stand alone. It has no limit parameter, so results are trimmed here.
+ */
+async function rgPodcastSearch(filters: SearchFilters): Promise<SearchResults> {
+    const categoryId = resolvePodcastCategoryId(filters.genre, filters.srch);
+    // The category word has done its job as cat_id; leaving it in `s` as well
+    // narrows the text match to podcasts with it in the title.
+    const searchText = [filters.srch, categoryId ? "" : filters.genre]
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+
+    const response = await axios.get<RgPodcastResponse>(`${RG_PODCAST_BASE}${RG_PODCAST_PATH}`, {
+        params: {
+            s: searchText || undefined,
+            cc: filters.loc ? filters.loc.toLowerCase() : undefined,
+            lc: ISO_639_2_TO_1[filters.lc] || undefined,
+            cat_id: categoryId,
+        },
+        timeout: 35000,
+        validateStatus: (status) => status < 500,
+    });
+
+    if (response.status === 404) throw new NotDeployedError(RG_PODCAST_PATH);
+
+    const rows = response.data?.data?.Data;
+    if (!Array.isArray(rows) || Number(response.data?.data?.ErrorCode ?? -1) !== 0) {
+        return { stations: [], podcasts: [], endpoint: RG_PODCAST_PATH };
+    }
+
+    return {
+        stations: [],
+        podcasts: rows.filter((podcast) => podcast?.p_id).slice(0, filters.limit),
+        endpoint: RG_PODCAST_PATH,
+    };
+}
+
+interface HybridPodcastResponse {
+    data?: {
+        ErrorCode?: number | string;
+        Data?: Array<Podcast & { list?: Podcast[] }>;
+    };
+}
+
+/**
+ * The hybrid endpoint has no filter fields, so everything the user typed has to
+ * collapse back into one search string. A word like "comedy" or "news" is parsed
+ * out as a genre for the radio indexes but is plain search text for podcasts.
+ */
+function hybridPodcastQuery(filters: SearchFilters): string {
+    return [filters.srch, filters.genre, filters.callsign].map((part) => part.trim()).filter(Boolean).join(" ");
+}
+
+/**
+ * Hybrid podcast search. Takes only `srch` (no location/language/genre filters)
+ * and applies no server-side limit, so results are trimmed here.
+ */
+async function podcastHybridSearch(filters: SearchFilters): Promise<SearchResults> {
+    const response = await axios.get<HybridPodcastResponse>(`${AIPD_SEARCH_BASE}${AIPD_PODCAST_PATH}`, {
+        params: { srch: hybridPodcastQuery(filters), collection_name: AIPD_COLLECTION_NAME },
+        timeout: 35000,
+        validateStatus: (status) => status < 500,
+    });
+
+    if (response.status === 404) throw new NotDeployedError(AIPD_PODCAST_PATH);
+
+    const rows = response.data?.data?.Data;
+    if (!Array.isArray(rows) || Number(response.data?.data?.ErrorCode ?? -1) !== 0) {
+        return { stations: [], podcasts: [], endpoint: AIPD_PODCAST_PATH };
+    }
+
+    // /pd2 returns podcasts flat; the older /pd wraps them in `list` blocks.
+    const podcasts = rows.flatMap((row) => (Array.isArray(row?.list) ? row.list : [row]));
+
+    return {
+        stations: [],
+        podcasts: podcasts.filter((podcast) => podcast?.p_id).slice(0, filters.limit),
+        endpoint: AIPD_PODCAST_PATH,
+    };
+}
+
+async function comboSearch(filters: SearchFilters): Promise<SearchResults> {
+    const response = await axios.get<ApiResponse>(`${RFM_VECTOR_BASE}${COMBO_SEARCH_PATH}`, {
+        params: { srch: filters.srch, device: RFM_DEVICE, limit: filters.limit },
+        timeout: 35000,
+        validateStatus: (status) => status < 500,
+    });
+    return { ...readResults(response.data), endpoint: COMBO_SEARCH_PATH };
+}
+
+/**
+ * Filters are ANDed server-side, so an over-specified request often matches
+ * nothing. Relax it a step at a time rather than returning an empty widget.
+ */
+function relaxationSteps(intent: SearchIntent): SearchFilters[] {
+    const base: SearchFilters = { ...intent };
+    const steps: SearchFilters[] = [base];
+
+    if (base.genre && base.lc) steps.push({ ...base, genre: "" });
+    if (base.lc || base.genre) steps.push({ ...base, lc: "", genre: "" });
+    if (base.freq && (base.lc || base.genre)) steps.push({ ...base, lc: "", genre: "", freq: "" });
+
+    // A genre- or frequency-only request that those indexes do not know about:
+    // search for it as text instead.
+    if (!base.srch && base.genre) {
+        steps.push({ ...base, srch: base.genre, genre: "", lc: "" });
+    }
+    if (!base.srch && base.freq) {
+        steps.push({ ...base, srch: base.freq, freq: "", genre: "", lc: "" });
+    }
+
+    if (base.srch && (base.loc || base.lc || base.genre || base.freq || base.callsign)) {
+        steps.push({ ...base, loc: "", lc: "", genre: "", freq: "", callsign: "" });
+    }
+
+    return steps;
+}
+
+async function runSearch(intent: SearchIntent): Promise<SearchResults> {
+    const steps = relaxationSteps(intent);
+
+    // Podcast text searches go to the hybrid endpoint first; it has no filter
+    // support, so browse-style requests (no srch) still use the vector API.
+    if (intent.mode === "podcast") {
+        try {
+            const searched = await rgPodcastSearch(intent);
+            if (!isEmpty(searched)) return searched;
+        } catch (err) {
+            console.error("Podcast search failed, falling back:", err);
+        }
+    }
+
+    if (intent.mode === "podcast" && hybridPodcastQuery(intent)) {
+        try {
+            const hybrid = await podcastHybridSearch(intent);
+            if (!isEmpty(hybrid)) return hybrid;
+        } catch (err) {
+            console.error("Hybrid podcast search failed, falling back:", err);
+        }
+    }
+
+    // A radio request with filters but no station name is a browse, not a search.
+    // The browse API has no free-text field, so named stations still go to the
+    // vector index below.
+    if (intent.mode === "radio" && !intent.srch && !intent.freq && !intent.callsign) {
+        try {
+            for (const filters of radioBrowseSteps(intent)) {
+                const browsed = await agentRadioBrowse(filters);
+                if (!isEmpty(browsed)) return browsed;
+            }
+        } catch (err) {
+            console.error("Radio browse failed, falling back:", err);
+        }
+    }
+
+    if (intent.mode === "radio" || intent.mode === "podcast") {
+        const path = intent.mode === "radio" ? RADIO_FILTER_PATH : PODCAST_FILTER_PATH;
+        try {
+            for (const filters of steps) {
+                const results = await postFilter(path, filters);
+                if (!isEmpty(results)) return results;
+            }
+            const broad = await comboSearchWithFallback(intent, []);
+            return intent.mode === "podcast"
+                ? { ...broad, stations: [] }
+                : { ...broad, podcasts: [] };
+        } catch (err) {
+            if (!(err instanceof NotDeployedError)) throw err;
+            // Fall through to the combo endpoint and keep only the wanted type.
+            const results = await comboSearchWithFallback(intent, steps);
+            return intent.mode === "podcast"
+                ? { ...results, stations: [] }
+                : { ...results, podcasts: [] };
+        }
+    }
+
+    return comboSearchWithFallback(intent, steps);
+}
+
+async function comboSearchWithFallback(
+    intent: SearchIntent,
+    steps: SearchFilters[]
+): Promise<SearchResults> {
+    // The combo endpoint takes no filters, so feed it the most descriptive text
+    // we have; fall back to the radio filter when there is nothing to type.
+    let text = [intent.srch, intent.genre, intent.callsign, intent.freq]
+        .filter(Boolean)
+        .join(" ")
+        .trim();
+    if (!text && intent.mode === "podcast") text = "podcast";
+
+    if (text) {
+        const results = await comboSearch({ ...intent, srch: text });
+        if (!isEmpty(results)) return results;
+    }
+
+    for (const filters of steps) {
+        const results = await postFilter(RADIO_FILTER_PATH, filters);
+        if (!isEmpty(results)) return results;
+    }
+
+    return { stations: [], podcasts: [], endpoint: RADIO_FILTER_PATH };
 }
 
 function buildStationViews(stations: RadioStation[]): StationView[] {
@@ -231,11 +1459,32 @@ function buildStationViews(stations: RadioStation[]): StationView[] {
     }));
 }
 
+/**
+ * Podcast art is hosted on whichever CDN the publisher uses (megaphone, acast,
+ * buzzsprout, iono...), which no widget CSP allowlist can keep up with, so it
+ * is served back through this origin instead.
+ */
+function proxiedImageUrl(imageUrl: string): string {
+    if (!imageUrl) return "";
+    if (!/^https?:\/\//i.test(imageUrl)) return imageUrl;
+    // RadioFM's own CDNs (e.g. /podcast/200/<id>.jpg, not just /rfm) are already
+    // in the widget CSP, so they load directly.
+    let origin = "";
+    try {
+        origin = new URL(imageUrl).origin;
+    } catch {
+        return imageUrl;
+    }
+    if (DIRECT_IMAGE_ORIGINS.has(origin)) return imageUrl;
+
+    return `${MCP_PUBLIC_BASE_URL}/pimg?u=${encodeURIComponent(imageUrl)}`;
+}
+
 function buildPodcastViews(podcasts: Podcast[]): PodcastView[] {
     return podcasts.map((podcast) => ({
         id: podcast.p_id,
         name: podcast.p_name,
-        imageUrl: absoluteUrl(RADIOFM_LOGO_BASE, podcast.p_image),
+        imageUrl: proxiedImageUrl(absoluteUrl(RADIOFM_LOGO_BASE, podcast.p_image)),
         fallbackImageUrl: PODCAST_FALLBACK_IMAGE_URL,
         url: podcastWebsiteUrl(podcast),
         category: podcast.cat_name,
@@ -363,14 +1612,13 @@ function buildRadioFmWidgetHtml(): string {
       titleEl.textContent = "Loading...";
       stationsEl.replaceChildren();
       podcastsEl.replaceChildren();
-      setHidden(stationsTitleEl, false);
-      setHidden(podcastsTitleEl, false);
+      setHidden(stationsTitleEl, true);
+      setHidden(podcastsTitleEl, true);
       stationsCountEl.textContent = "";
       podcastsCountEl.textContent = "";
       setHidden(loadMoreStationsEl, true);
       setHidden(loadMorePodcastsEl, true);
       renderSkeletonCards(stationsEl, 6);
-      renderSkeletonCards(podcastsEl, 4);
     }
 
     function render(data) {
@@ -384,14 +1632,17 @@ function buildRadioFmWidgetHtml(): string {
       const data = currentData;
       const hasResult = data && (Array.isArray(data.stations) || Array.isArray(data.podcasts));
       const query = text(data && data.query);
-      const stations = Array.isArray(data && data.stations) ? data.stations : [];
-      const podcasts = Array.isArray(data && data.podcasts) ? data.podcasts : [];
+      const mode = text(data && data.mode) || "any";
+      const showStations = mode !== "podcast";
+      const showPodcasts = mode !== "radio";
+      const stations = showStations && Array.isArray(data && data.stations) ? data.stations : [];
+      const podcasts = showPodcasts && Array.isArray(data && data.podcasts) ? data.podcasts : [];
 
       titleEl.textContent = query ? 'Search Results for "' + query + '"' : (hasResult ? "RadioFM results" : "Loading...");
       stationsEl.replaceChildren();
       podcastsEl.replaceChildren();
-      setHidden(stationsTitleEl, !hasResult);
-      setHidden(podcastsTitleEl, !hasResult);
+      setHidden(stationsTitleEl, !hasResult || !showStations);
+      setHidden(podcastsTitleEl, !hasResult || !showPodcasts);
       setHidden(loadMoreStationsEl, true);
       setHidden(loadMorePodcastsEl, true);
 
@@ -403,7 +1654,7 @@ function buildRadioFmWidgetHtml(): string {
       stationsCountEl.textContent = "(" + stations.length + ")";
       podcastsCountEl.textContent = "(" + podcasts.length + ")";
 
-      if (!stations.length) {
+      if (showStations && !stations.length) {
         appendText(stationsEl, "p", "meta", "No radio stations found.");
       }
 
@@ -444,7 +1695,7 @@ function buildRadioFmWidgetHtml(): string {
       }
       setHidden(loadMoreStationsEl, visibleStationCount >= stations.length);
 
-      if (!podcasts.length) {
+      if (showPodcasts && !podcasts.length) {
         appendText(podcastsEl, "p", "meta", "No podcasts found.");
       }
 
@@ -494,20 +1745,38 @@ function buildRadioFmWidgetHtml(): string {
       renderCurrent();
     });
 
-    render(window.openai && window.openai.toolOutput);
+    function hasResults(value) {
+      return !!value && (Array.isArray(value.stations) || Array.isArray(value.podcasts));
+    }
+
+    // The full result set travels in _meta so the model never sees it and cannot
+    // re-list the stations under the widget. structuredContent stays as a fallback.
+    function pickPayload(output, meta) {
+      const fromMeta = meta && meta.radiofm;
+      if (hasResults(fromMeta)) return fromMeta;
+      if (hasResults(output)) return output;
+      return fromMeta || output;
+    }
+
+    render(pickPayload(
+      window.openai && window.openai.toolOutput,
+      window.openai && window.openai.toolResponseMetadata
+    ));
 
     window.addEventListener("message", (event) => {
       if (event.source !== window.parent) return;
       const message = event.data;
       if (!message || message.jsonrpc !== "2.0") return;
       if (message.method === "ui/notifications/tool-result") {
-        render(message.params && message.params.structuredContent);
+        const params = message.params || {};
+        render(pickPayload(params.structuredContent, params._meta));
       }
     }, { passive: true });
 
     window.addEventListener("openai:set_globals", (event) => {
-      const output = event.detail && event.detail.globals && event.detail.globals.toolOutput;
-      if (output) render(output);
+      const globals = (event.detail && event.detail.globals) || {};
+      const payload = pickPayload(globals.toolOutput, globals.toolResponseMetadata);
+      if (hasResults(payload)) render(payload);
     }, { passive: true });
   </script>
 </body>
@@ -516,23 +1785,16 @@ function buildRadioFmWidgetHtml(): string {
 }
 
 function buildTextSummary(query: string, stations: RadioStation[], podcasts: Podcast[]): string {
-    const stationLines = stations.slice(0, 5).map((station) => {
-        const location = [station.st_city, station.st_state, station.country_name_rs].filter(Boolean).join(", ");
-        return `- ${station.st_name}${location ? ` - ${location}` : ""}`;
-    });
+    const parts: string[] = [];
+    if (stations.length) parts.push(`${stations.length} radio station${stations.length === 1 ? "" : "s"}`);
+    if (podcasts.length) parts.push(`${podcasts.length} podcast${podcasts.length === 1 ? "" : "s"}`);
 
-    const podcastLines = podcasts.slice(0, 3).map((podcast) => `- ${podcast.p_name}`);
-    const sections = [`Search results for "${query}"`];
+    const found = parts.length ? parts.join(" and ") : "no matches";
+    const subject = query ? `"${query}"` : "this request";
 
-    if (stationLines.length) {
-        sections.push(`Stations:\n${stationLines.join("\n")}`);
-    }
-
-    if (podcastLines.length) {
-        sections.push(`Podcasts:\n${podcastLines.join("\n")}`);
-    }
-
-    return sections.join("\n\n");
+    // Names are deliberately omitted: the widget above already lists every result,
+    // so repeating them here would show the user the same stations twice.
+    return `Displayed ${found} for ${subject} in the Radio FM widget above. The user can already see the full list, so do not repeat, name, or re-list any station or podcast — reply with at most one short sentence.`;
 }
 
 // Express setup
@@ -552,6 +1814,51 @@ app.get("/", (_req, res) => {
         version: SERVER_VERSION,
         protocol: "MCP",
     });
+});
+
+// Podcast artwork proxy - see proxiedImageUrl().
+app.get("/pimg", async (req, res) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+
+    const target = String(req.query.u || "");
+    let parsed: URL;
+    try {
+        parsed = new URL(target);
+    } catch {
+        return res.redirect(302, PODCAST_FALLBACK_IMAGE_URL);
+    }
+
+    const host = parsed.hostname.toLowerCase();
+    const isPrivateHost =
+        parsed.protocol !== "https:" ||
+        host === "localhost" ||
+        host.endsWith(".local") ||
+        /^(?:127\.|10\.|192\.168\.|169\.254\.|0\.)/.test(host) ||
+        /^172\.(?:1[6-9]|2\d|3[01])\./.test(host) ||
+        host === "[::1]";
+    if (isPrivateHost) {
+        return res.redirect(302, PODCAST_FALLBACK_IMAGE_URL);
+    }
+
+    try {
+        const upstream = await axios.get<ArrayBuffer>(parsed.toString(), {
+            responseType: "arraybuffer",
+            timeout: 10000,
+            maxRedirects: 3,
+            maxContentLength: 8 * 1024 * 1024,
+        });
+
+        const contentType = String(upstream.headers["content-type"] || "");
+        if (!contentType.startsWith("image/")) {
+            return res.redirect(302, PODCAST_FALLBACK_IMAGE_URL);
+        }
+
+        res.setHeader("Content-Type", contentType);
+        res.setHeader("Cache-Control", "public, max-age=86400, immutable");
+        return res.send(Buffer.from(upstream.data));
+    } catch {
+        return res.redirect(302, PODCAST_FALLBACK_IMAGE_URL);
+    }
 });
 
 app.get("/mcp", (_req, res) => {
@@ -588,19 +1895,8 @@ app.get("/mcp.json", (_req, res) => {
             tools: [
                 {
                     name: "search_radio_stations",
-                    description:
-                        "Search and discover live radio stations and podcasts from across the world by entering a station name, location, country, language, or genre. ChatGPT connects with the Radio FM database to instantly return matching stations you can explore or play — from local favorites to trending global broadcasts.",
-                    inputSchema: {
-                        type: "object",
-                        properties: {
-                            query: {
-                                type: "string",
-                                description:
-                                    "Search query (e.g., 'RedFM', 'Vividh Bharati', 'AIR','BBC', 'India', 'Hindi', 'Jazz')",
-                            },
-                        },
-                        required: ["query"],
-                    },
+                    description: RADIOFM_TOOL_DESCRIPTION,
+                    inputSchema: RADIOFM_INPUT_SCHEMA,
                     outputSchema: RADIOFM_OUTPUT_SCHEMA,
                     "annotations": {
                         "readOnlyHint": true,
@@ -733,19 +2029,8 @@ app.post("/mcp", async (req, res) => {
                     tools: [
                         {
                             name: "search_radio_stations",
-                            description:
-                                "Search and explore live radio stations and podcasts from around the world using the Radio FM app within ChatGPT. Discover trending music, news, and cultural broadcasts across languages, genres, and countries — all seamlessly accessible without sign-in.",
-                            inputSchema: {
-                                type: "object",
-                                properties: {
-                                    query: {
-                                        type: "string",
-                                        description:
-                                            "Search query (e.g., 'RedFM', 'Vividh Bharati', 'AIR', 'BBC', 'India', 'Hindi', 'Jazz')",
-                                    },
-                                },
-                                required: ["query"],
-                            },
+                            description: RADIOFM_TOOL_DESCRIPTION,
+                            inputSchema: RADIOFM_INPUT_SCHEMA,
                             "annotations": {
                                 "readOnlyHint": true,
                                 "openWorldHint": true,
@@ -770,19 +2055,15 @@ app.post("/mcp", async (req, res) => {
             if (name !== "search_radio_stations")
                 throw new Error(`Unknown tool: ${name}`);
 
-            const query = args?.query as string;
-            if (!query) throw new Error("Search query is required");
+            const intent = buildSearchIntent(args || {});
+            const query = String(args?.query ?? "").trim();
+            if (!query && !intent.srch && !intent.loc && !intent.lc && !intent.city && !intent.state && !intent.genre && !intent.freq && !intent.callsign && !intent.explore) {
+                throw new Error("Search query is required");
+            }
 
-            const response = await axios.get<ApiResponse>(
-                `${RADIOFM_API_BASE}/new_combo_search.php`,
-                { params: { srch: query }, timeout: 35000 }
-            );
-            const apiData = response.data;
-            if (apiData.data.ErrorCode !== 0)
-                throw new Error(apiData.data.ErrorMessage);
+            const { stations, podcasts, endpoint } = await runSearch(intent);
 
-            const results = apiData.data.Data;
-            if (!results?.length)
+            if (!stations.length && !podcasts.length) {
                 return res.json({
                     jsonrpc: "2.0",
                     id,
@@ -795,24 +2076,7 @@ app.post("/mcp", async (req, res) => {
                         ],
                     },
                 });
-
-            const radioData = results.find((r) => r.type === "radio");
-            const stations =
-                radioData && radioData.data.length > 0
-                    ? (radioData.data as RadioStation[])
-                    : [];
-
-            if (radioData && radioData.data.length > 0) {
-                stations.forEach((station) => {
-                    station.deeplink = station.deeplink || `https://appradiofm.com/radioplay/${station.st_shorturl}`;
-                });
             }
-
-            const podcastData = results.find((r) => r.type === "podcast");
-            const podcasts =
-                podcastData && podcastData.data.length > 0
-                    ? (podcastData.data as Podcast[])
-                    : [];
 
             const stationViews = buildStationViews(stations);
             const podcastViews = buildPodcastViews(podcasts);
@@ -824,8 +2088,9 @@ app.post("/mcp", async (req, res) => {
                 result: {
                     structuredContent: {
                         query,
-                        stations: stationViews,
-                        podcasts: podcastViews,
+                        mode: intent.mode,
+                        stationCount: stationViews.length,
+                        podcastCount: podcastViews.length,
                     },
                     content: [
                         {
@@ -835,9 +2100,28 @@ app.post("/mcp", async (req, res) => {
                     ],
                     _meta: {
                         "openai/outputTemplate": RADIOFM_WIDGET_URI,
+                        "openai/widgetDescription":
+                            "Radio FM search results are already listed in the widget. Do not repeat or re-list them in the reply.",
+                        radiofm: {
+                            query,
+                            mode: intent.mode,
+                            stations: stationViews,
+                            podcasts: podcastViews,
+                        },
                         resultCount: {
                             stations: stations.length,
                             podcasts: podcasts.length,
+                        },
+                        appliedFilters: {
+                            endpoint,
+                            srch: intent.srch,
+                            loc: intent.loc,
+                            lc: intent.lc,
+                            genre: intent.genre,
+                            freq: intent.freq,
+                            callsign: intent.callsign,
+                            limit: intent.limit,
+                            explore: intent.explore,
                         },
                     },
                 },

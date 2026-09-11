@@ -1,7 +1,7 @@
 {
     "schema_version": "v1",
     "name": "RadioFM",
-    "version": "1.0.4",
+    "version": "1.1.0",
     "description": "Radio FM brings the world’s radio stations and podcasts directly into ChatGPT. Explore live broadcasts from over 200 countries — search by station name, city, country, language, or genre, and instantly discover music, news, talk, and sports channels that suit your mood. Whether you want trending hits, sports or regional talk shows, or local community radio, ChatGPT can use Radio FM to find and play them in real time. No authentication or setup is required — just search and start listening.",
     "api": {
         "type": "mcp",
@@ -12,13 +12,64 @@
         "tools": [
             {
                 "name": "search_radio_stations",
-                "description": "Search and discover live radio stations and podcasts from across the world by entering a station name, location, country, language, or genre. ChatGPT connects with the Radio FM database to instantly return matching stations you can explore or play — from local favorites to trending global broadcasts.",
+                "description": "Search live radio stations and podcasts worldwide from the Radio FM catalogue.\nRadio-only requests hit the radio filter, podcast-only requests hit the podcast filter,\nand anything else runs a combined search.\n\nFILTER RULE - CRITICAL: only populate a filter the user EXPLICITLY mentioned.\nNever infer one filter from another: a city does not imply a state, and a country does\nnot imply a language (India does NOT mean Hindi).\nDo not copy a location, language or genre into `query` - each belongs in its own field.\n`query` is for a station or podcast NAME only; leave it empty for any browse request.\n\nExamples:\n  \"stations in Mumbai\"      -> city=\"Mumbai\", content_type=\"radio\"\n  \"radio in Texas\"          -> state=\"Texas\", content_type=\"radio\"\n  \"top radio\"               -> query=\"\", content_type=\"radio\" (no limit - return the full list)\n  \"top 10 radio stations\"   -> query=\"\", limit=10, content_type=\"radio\"\n  \"top radio in India\"      -> query=\"\", loc=\"IN\", content_type=\"radio\"\n  \"hindi stations in Delhi\" -> city=\"Delhi\", lc=\"hi\", content_type=\"radio\"\n  \"jazz stations\"           -> genre=\"jazz\", content_type=\"radio\"\n  \"most favourite radio in India\" -> query=\"\", loc=\"IN\", sort=\"favourites\", content_type=\"radio\"\n  \"indian podcasts\"         -> query=\"\", loc=\"IN\", content_type=\"podcast\"\n  \"comedy podcasts\"         -> query=\"\", genre=\"comedy\", content_type=\"podcast\"\n  \"hindi podcasts\"          -> query=\"\", lc=\"hi\", content_type=\"podcast\"\n  \"podcasts from Noida\"     -> query=\"\", city=\"Noida\", loc=\"IN\", content_type=\"podcast\"\n\nWhen a city or state is named, ALWAYS set `loc` to the country it belongs in as\nwell (Noida or UP -> loc=\"IN\"), because podcasts are only filterable by country.\n  \"BBC\"                     -> query=\"BBC\" (everything else empty)\n\nOnly set `limit` when the user asked for a specific number. A plain \"top radio\"\nrequest wants the full list, not one station.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {
                         "query": {
                             "type": "string",
-                            "description": "Search query (e.g., 'BBC', 'India', 'Hindi', 'Jazz')"
+                            "description": "Free-text part of the search only - a station or podcast name (e.g. 'BBC', 'Vividh Bharati'). Leave empty for a browse request such as 'top radio stations in India' - a city, state, country, language or genre belongs in its own field, never here."
+                        },
+                        "content_type": {
+                            "type": "string",
+                            "enum": [
+                                "radio",
+                                "podcast",
+                                "any"
+                            ],
+                            "description": "'radio' when the user asked for radio/stations/FM, 'podcast' when they asked for podcasts/episodes, otherwise 'any'."
+                        },
+                        "loc": {
+                            "type": "string",
+                            "description": "ISO country code, e.g. 'IN' for India, 'US', 'GB', 'AU'. Only when a country is explicitly named."
+                        },
+                        "lc": {
+                            "type": "string",
+                            "description": "Language, e.g. 'hi'/'hindi' or 'en'/'english'. Only when a language is explicitly named - a country never implies a language."
+                        },
+                        "city": {
+                            "type": "string",
+                            "description": "City name such as 'Mumbai', 'Delhi' or 'Albany'. Only when a city is explicitly named - also set `loc` to that city's country."
+                        },
+                        "state": {
+                            "type": "string",
+                            "description": "State or province such as 'Texas', 'Maharashtra' or 'New York'. Only when a state is explicitly named - also set `loc` to that state's country."
+                        },
+                        "genre": {
+                            "type": "string",
+                            "description": "Genre for radio, or podcast category (comedy, true crime, history, technology, news & politics, sports, music, ...). Only when explicitly mentioned."
+                        },
+                        "freq": {
+                            "type": "string",
+                            "description": "Broadcast frequency such as '92.7', '94.3' or '1605'."
+                        },
+                        "callsign": {
+                            "type": "string",
+                            "description": "Station callsign such as 'WASP' or 'WAMC'."
+                        },
+                        "sort": {
+                            "type": "string",
+                            "enum": [
+                                "popular",
+                                "favourites"
+                            ],
+                            "description": "'favourites' only when the user asked for the most favourited/liked/loved stations. Otherwise leave unset - results are ranked by play count."
+                        },
+                        "limit": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "maximum": 100,
+                            "description": "How many results to return. Set to 10 for 'top 10', and so on."
                         }
                     },
                     "required": [
@@ -31,103 +82,25 @@
                         "query": {
                             "type": "string"
                         },
-                        "stations": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {
-                                        "type": "string"
-                                    },
-                                    "name": {
-                                        "type": "string"
-                                    },
-                                    "logoPath": {
-                                        "type": "string"
-                                    },
-                                    "logoUrl": {
-                                        "type": "string"
-                                    },
-                                    "fallbackImageUrl": {
-                                        "type": "string"
-                                    },
-                                    "url": {
-                                        "type": "string"
-                                    },
-                                    "location": {
-                                        "type": "string"
-                                    },
-                                    "language": {
-                                        "type": "string"
-                                    },
-                                    "genre": {
-                                        "type": "string"
-                                    },
-                                    "stream": {
-                                        "type": "string"
-                                    },
-                                    "plays": {
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "id",
-                                    "name",
-                                    "logoPath",
-                                    "logoUrl",
-                                    "fallbackImageUrl",
-                                    "url",
-                                    "location",
-                                    "language",
-                                    "genre",
-                                    "stream",
-                                    "plays"
-                                ]
-                            }
+                        "mode": {
+                            "type": "string",
+                            "enum": [
+                                "radio",
+                                "podcast",
+                                "any"
+                            ]
                         },
-                        "podcasts": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {
-                                        "type": "string"
-                                    },
-                                    "name": {
-                                        "type": "string"
-                                    },
-                                    "imageUrl": {
-                                        "type": "string"
-                                    },
-                                    "fallbackImageUrl": {
-                                        "type": "string"
-                                    },
-                                    "url": {
-                                        "type": "string"
-                                    },
-                                    "category": {
-                                        "type": "string"
-                                    },
-                                    "language": {
-                                        "type": "string"
-                                    }
-                                },
-                                "required": [
-                                    "id",
-                                    "name",
-                                    "imageUrl",
-                                    "fallbackImageUrl",
-                                    "url",
-                                    "category",
-                                    "language"
-                                ]
-                            }
+                        "stationCount": {
+                            "type": "integer"
+                        },
+                        "podcastCount": {
+                            "type": "integer"
                         }
                     },
                     "required": [
                         "query",
-                        "stations",
-                        "podcasts"
+                        "stationCount",
+                        "podcastCount"
                     ]
                 },
                 "annotations": {
@@ -137,9 +110,9 @@
                 },
                 "_meta": {
                     "ui": {
-                        "resourceUri": "ui://radiofm/search-results-v4.html"
+                        "resourceUri": "ui://radiofm/search-results-v5.html"
                     },
-                    "openai/outputTemplate": "ui://radiofm/search-results-v4.html",
+                    "openai/outputTemplate": "ui://radiofm/search-results-v5.html",
                     "openai/toolInvocation/invoking": "Searching RadioFM...",
                     "openai/toolInvocation/invoked": "RadioFM results ready"
                 }
