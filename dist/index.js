@@ -1298,6 +1298,14 @@ function proxiedImageUrl(imageUrl) {
         return imageUrl;
     return `${MCP_PUBLIC_BASE_URL}/pimg?u=${encodeURIComponent(imageUrl)}`;
 }
+/** "3928" -> 3928, "4K+" -> 4000, "1.2M+" -> 1200000; null when missing or unreadable. */
+function podcastPlayCount(value) {
+    const match = (value || "").trim().replace(/,/g, "").match(/^(\d+(?:\.\d+)?)\s*([KMB])?\+?$/i);
+    if (!match)
+        return null;
+    const multiplier = { K: 1e3, M: 1e6, B: 1e9 }[(match[2] || "").toUpperCase()] || 1;
+    return Math.round(Number.parseFloat(match[1]) * multiplier);
+}
 function buildPodcastViews(podcasts) {
     return podcasts.map((podcast) => ({
         id: podcast.p_id,
@@ -1307,6 +1315,8 @@ function buildPodcastViews(podcasts) {
         url: podcastWebsiteUrl(podcast),
         category: podcast.cat_name,
         language: podcast.p_lang,
+        playCount: podcastPlayCount(podcast.total_play),
+        playsLabel: /^\d+$/.test((podcast.total_play || "").trim()) ? "" : (podcast.total_play || "").trim(),
     }));
 }
 function buildRadioFmWidgetHtml() {
@@ -1408,15 +1418,16 @@ function buildRadioFmWidgetHtml() {
     const compactNumber = new Intl.NumberFormat("en", { notation: "compact", maximumFractionDigits: 1 });
 
     // Pill with an icon and a short count ("86.3M"); the exact figure is in the tooltip.
-    function appendStat(parent, kind, count, label) {
+    // displayText is for counts the API already rounded ("4K+"), shown as sent.
+    function appendStat(parent, kind, count, label, displayText) {
       const value = Number(count) || 0;
       const el = document.createElement("span");
       el.className = "stat " + kind;
-      el.title = value.toLocaleString("en") + " " + label;
+      el.title = (displayText || value.toLocaleString("en")) + " " + label;
       el.setAttribute("aria-label", el.title);
       el.innerHTML = STAT_ICONS[kind];
       const number = document.createElement("span");
-      number.textContent = compactNumber.format(value);
+      number.textContent = displayText || compactNumber.format(value);
       el.appendChild(number);
       parent.appendChild(el);
     }
@@ -1578,6 +1589,12 @@ function buildRadioFmWidgetHtml() {
 
         appendText(card, "h2", "name", podcast.name);
         appendText(card, "p", "meta oneLine", [podcast.category, podcast.language].filter(Boolean).join(" - "));
+        if (podcast.playCount != null) {
+          const stats = document.createElement("div");
+          stats.className = "stats";
+          appendStat(stats, "plays", podcast.playCount, "plays", text(podcast.playsLabel));
+          card.appendChild(stats);
+        }
 
         const listen = document.createElement("button");
         listen.className = "listen";
