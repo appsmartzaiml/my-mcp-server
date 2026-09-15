@@ -110,9 +110,9 @@
                 },
                 "_meta": {
                     "ui": {
-                        "resourceUri": "ui://radiofm/search-results-v5.html"
+                        "resourceUri": "ui://radiofm/search-results-v6.html"
                     },
-                    "openai/outputTemplate": "ui://radiofm/search-results-v5.html",
+                    "openai/outputTemplate": "ui://radiofm/search-results-v6.html",
                     "openai/toolInvocation/invoking": "Searching RadioFM...",
                     "openai/toolInvocation/invoked": "RadioFM results ready"
                 }

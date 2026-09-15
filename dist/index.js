@@ -16,7 +16,7 @@ const DIRECT_IMAGE_ORIGINS = new Set([
     new URL(MCP_PUBLIC_BASE_URL).origin,
 ]);
 const port = process.env.PORT || 3000;
-const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v5.html";
+const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v6.html";
 const SERVER_VERSION = "1.1.0";
 const RADIOFM_TOOL_DESCRIPTION = [
     "Search live radio stations and podcasts worldwide from the Radio FM catalogue.",
@@ -1327,31 +1327,51 @@ function buildRadioFmWidgetHtml() {
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    :root { color-scheme: light; }
-    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: #171717; background: #fff; }
+    :root {
+      color-scheme: light;
+      --bg: #fff; --text: #171717; --muted: #555; --subtle: #777; --card-bg: #fff; --border: #ddd; --logo-bg: #f6f7f9;
+      --plays-bg: #F1ECFE; --plays-text: #5B3FD6; --favs-bg: #FDECEF; --favs-text: #D6336C;
+      --load-bg: #171717; --load-text: #fff; --skeleton: #eee; --shimmer: rgba(255,255,255,.72);
+    }
+    /* No theme from the host yet: follow the system setting. */
+    @media (prefers-color-scheme: dark) {
+      :root:not([data-theme="light"]) {
+        color-scheme: dark;
+        --bg: #212121; --text: #ececec; --muted: #b4b4b4; --subtle: #8f8f8f; --card-bg: #2a2a2a; --border: #3a3a3a; --logo-bg: #333;
+        --plays-bg: rgba(134,90,247,.2); --plays-text: #b9a4ff; --favs-bg: rgba(214,51,108,.2); --favs-text: #ff8fb3;
+        --load-bg: #ececec; --load-text: #171717; --skeleton: #333; --shimmer: rgba(255,255,255,.08);
+      }
+    }
+    :root[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #212121; --text: #ececec; --muted: #b4b4b4; --subtle: #8f8f8f; --card-bg: #2a2a2a; --border: #3a3a3a; --logo-bg: #333;
+      --plays-bg: rgba(134,90,247,.2); --plays-text: #b9a4ff; --favs-bg: rgba(214,51,108,.2); --favs-text: #ff8fb3;
+      --load-bg: #ececec; --load-text: #171717; --skeleton: #333; --shimmer: rgba(255,255,255,.08);
+    }
+    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--text); background: var(--bg); }
     .wrap { padding: 14px; max-width: 920px; }
     .title { font-size: 22px; line-height: 1.2; margin: 0 0 14px; }
     .sectionTitle { font-size: 16px; line-height: 1.25; margin: 18px 0 10px; }
-    .count { color: #777; font-weight: 500; }
+    .count { color: var(--subtle); font-weight: 500; }
     .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 14px; }
-    .card { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid #ddd; border-radius: 8px; padding: 12px; background: #fff; min-width: 0; }
+    .card { display: flex; flex-direction: column; align-items: flex-start; border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: var(--card-bg); min-width: 0; }
     .card > * { max-width: 100%; }
-    .logoButton { display: block; width: 100%; padding: 0; border: 0; background: #f6f7f9; border-radius: 4px; cursor: pointer; }
+    .logoButton { display: block; width: 100%; padding: 0; border: 0; background: var(--logo-bg); border-radius: 4px; cursor: pointer; }
     .logo { display: block; width: 100%; aspect-ratio: 1 / 1; object-fit: contain; border-radius: 4px; }
     .name { font-size: 15px; line-height: 1.3; margin: 10px 0 4px; width: 100%; min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    .meta { font-size: 12px; line-height: 1.4; margin: 0 0 6px; color: #555; overflow-wrap: anywhere; }
+    .meta { font-size: 12px; line-height: 1.4; margin: 0 0 6px; color: var(--muted); overflow-wrap: anywhere; }
     .oneLine { width: 100%; min-height: 1.4em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .card .listen { margin-top: auto; }
     .stats { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
     .stat { display: inline-flex; align-items: center; gap: 4px; height: 22px; padding: 0 8px; border-radius: 999px; font-size: 12px; font-weight: 600; line-height: 1; font-variant-numeric: tabular-nums; cursor: default; }
     .stat svg { width: 12px; height: 12px; flex: none; }
-    .stat.plays { background: #F1ECFE; color: #5B3FD6; }
-    .stat.favs { background: #FDECEF; color: #D6336C; }
-    .subtle { color: #777; }
+    .stat.plays { background: var(--plays-bg); color: var(--plays-text); }
+    .stat.favs { background: var(--favs-bg); color: var(--favs-text); }
+    .subtle { color: var(--subtle); }
     .listen { display: inline-block; background: linear-gradient(to bottom, #865AF7, #2C5BD1); color: #fff; border: 0; padding: 8px 14px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
-    .loadMore { margin: 12px 0 4px; background: #171717; color: #fff; border: 0; padding: 8px 14px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
-    .skeleton { position: relative; overflow: hidden; background: #eee; border-radius: 4px; }
-    .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, rgba(255,255,255,.72), transparent); animation: shimmer 1.2s infinite; }
+    .loadMore { margin: 12px 0 4px; background: var(--load-bg); color: var(--load-text); border: 0; padding: 8px 14px; border-radius: 4px; font-size: 14px; font-weight: 600; cursor: pointer; }
+    .skeleton { position: relative; overflow: hidden; background: var(--skeleton); border-radius: 4px; }
+    .skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%); background: linear-gradient(90deg, transparent, var(--shimmer), transparent); animation: shimmer 1.2s infinite; }
     .skeletonLogo { width: 100%; aspect-ratio: 1 / 1; }
     .skeletonLine { height: 12px; margin: 10px 0 0; }
     .skeletonLine.short { width: 56%; }
@@ -1392,6 +1412,14 @@ function buildRadioFmWidgetHtml() {
     function text(value) {
       return String(value || "");
     }
+
+    // ChatGPT sends "light" / "dark"; anything else leaves the system setting in charge.
+    function applyTheme(theme) {
+      if (theme === "light" || theme === "dark") {
+        document.documentElement.setAttribute("data-theme", theme);
+      }
+    }
+    applyTheme(window.openai && window.openai.theme);
 
     function openUrl(url) {
       if (!url) return;
@@ -1640,6 +1668,9 @@ function buildRadioFmWidgetHtml() {
       if (event.source !== window.parent) return;
       const message = event.data;
       if (!message || message.jsonrpc !== "2.0") return;
+      if (message.method === "ui/notifications/host-context-changed") {
+        applyTheme(message.params && message.params.theme);
+      }
       if (message.method === "ui/notifications/tool-result") {
         const params = message.params || {};
         render(pickPayload(params.structuredContent, params._meta));
@@ -1648,6 +1679,7 @@ function buildRadioFmWidgetHtml() {
 
     window.addEventListener("openai:set_globals", (event) => {
       const globals = (event.detail && event.detail.globals) || {};
+      applyTheme(globals.theme);
       const payload = pickPayload(globals.toolOutput, globals.toolResponseMetadata);
       if (hasResults(payload)) render(payload);
     }, { passive: true });
