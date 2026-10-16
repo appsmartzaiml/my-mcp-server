@@ -310,7 +310,7 @@ const RFM_AGENT_PATH = "/rfm/api/rfm_mcp_agent.php";
 // favourites; otherwise the parameter is left off and the API ranks by plays.
 const DEFAULT_RESULT_LIMIT = 40;
 const MAX_RESULT_LIMIT = 100;
-const RFM_DEVICE = "android";
+const RFM_DEVICE = "chatgpt";
 
 type SearchMode = "radio" | "podcast" | "any";
 
