@@ -1919,6 +1919,49 @@ function buildRadioFmWidgetHtml(): string {
       const payload = pickPayload(globals.toolOutput, globals.toolResponseMetadata);
       if (hasResults(payload)) render(payload);
     }, { passive: true });
+
+    // MCP Apps handshake (Claude): the host waits up to 5s for
+    // ui/initialize -> response -> ui/notifications/initialized before it
+    // delivers the tool result. Without it the widget shows "app timed out".
+    // ChatGPT ignores these messages, so this is safe to run everywhere.
+    (function initMcpApp() {
+      if (!window.parent || window.parent === window) return;
+      const initializeId = "radiofm-ui-init";
+
+      function handleInitializeResponse(event) {
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== "2.0" || message.id !== initializeId) return;
+        window.removeEventListener("message", handleInitializeResponse);
+
+        if (message.error) {
+          console.error("RadioFM UI initialization failed:", message.error);
+          return;
+        }
+
+        const context = message.result && message.result.hostContext;
+        if (context) applyTheme(context.theme);
+
+        window.parent.postMessage({
+          jsonrpc: "2.0",
+          method: "ui/notifications/initialized",
+          params: {}
+        }, "*");
+      }
+
+      window.addEventListener("message", handleInitializeResponse);
+
+      window.parent.postMessage({
+        jsonrpc: "2.0",
+        id: initializeId,
+        method: "ui/initialize",
+        params: {
+          protocolVersion: "2026-01-26",
+          appInfo: { name: "radiofm-widget", version: "1.0.0" },
+          appCapabilities: {}
+        }
+      }, "*");
+    })();
   </script>
 </body>
 </html>

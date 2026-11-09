@@ -16,8 +16,7 @@ const DIRECT_IMAGE_ORIGINS = new Set([
     new URL(MCP_PUBLIC_BASE_URL).origin,
 ]);
 const port = process.env.PORT || 3000;
- const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v6.html";
-// const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v7.html";
+const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v6.html";
 const SERVER_VERSION = "1.1.0";
 const RADIOFM_TOOL_DESCRIPTION = [
     "Search live radio stations and podcasts worldwide from the Radio FM catalogue.",
@@ -1685,54 +1684,48 @@ function buildRadioFmWidgetHtml() {
       if (hasResults(payload)) render(payload);
     }, { passive: true });
 
-//sukhdeep
-// Initialize the widget's connection to ChatGPT.
-// const initializeId = "radiofm-ui-init";
+    // MCP Apps handshake (Claude): the host waits up to 5s for
+    // ui/initialize -> response -> ui/notifications/initialized before it
+    // delivers the tool result. Without it the widget shows "app timed out".
+    // ChatGPT ignores these messages, so this is safe to run everywhere.
+    (function initMcpApp() {
+      if (!window.parent || window.parent === window) return;
+      const initializeId = "radiofm-ui-init";
 
-// function handleInitializeResponse(event) {
-//   if (event.source !== window.parent) return;
+      function handleInitializeResponse(event) {
+        if (event.source !== window.parent) return;
+        const message = event.data;
+        if (!message || message.jsonrpc !== "2.0" || message.id !== initializeId) return;
+        window.removeEventListener("message", handleInitializeResponse);
 
-//   const message = event.data;
-//   if (
-//     !message ||
-//     message.jsonrpc !== "2.0" ||
-//     message.id !== initializeId
-//   ) return;
+        if (message.error) {
+          console.error("RadioFM UI initialization failed:", message.error);
+          return;
+        }
 
-//   window.removeEventListener("message", handleInitializeResponse);
+        const context = message.result && message.result.hostContext;
+        if (context) applyTheme(context.theme);
 
-//   if (message.error) {
-//     console.error("RadioFM UI initialization failed:", message.error);
-//     return;
-//   }
+        window.parent.postMessage({
+          jsonrpc: "2.0",
+          method: "ui/notifications/initialized",
+          params: {}
+        }, "*");
+      }
 
-//   window.parent.postMessage({
-//     jsonrpc: "2.0",
-//     method: "ui/notifications/initialized",
-//     params: {}
-//   }, "*");
+      window.addEventListener("message", handleInitializeResponse);
 
-//   const context = message.result && message.result.hostContext;
-//   if (context) applyTheme(context.theme);
-// }
-
-// window.addEventListener("message", handleInitializeResponse);
-
-// window.parent.postMessage({
-//   jsonrpc: "2.0",
-//   id: initializeId,
-//   method: "ui/initialize",
-//   params: {
-//     protocolVersion: "2026-01-26",
-//     appInfo: {
-//       name: "radiofm-widget",
-//       version: "1.0.0"
-//     },
-//     appCapabilities: {}
-//   }
-// }, "*");
-// 
-    
+      window.parent.postMessage({
+        jsonrpc: "2.0",
+        id: initializeId,
+        method: "ui/initialize",
+        params: {
+          protocolVersion: "2026-01-26",
+          appInfo: { name: "radiofm-widget", version: "1.0.0" },
+          appCapabilities: {}
+        }
+      }, "*");
+    })();
   </script>
 </body>
 </html>
@@ -1878,13 +1871,6 @@ app.post("/mcp", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     try {
         const { method, params, id } = req.body;
-        // Accept the notification that completes initialization.
-if (
-    method === "notifications/initialized" &&
-    !Object.prototype.hasOwnProperty.call(req.body, "id")
-) {
-    return res.status(202).end();
-}
         // Initialize handshake
         if (method === "initialize") {
             return res.json({
