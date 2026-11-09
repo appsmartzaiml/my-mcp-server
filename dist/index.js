@@ -16,8 +16,8 @@ const DIRECT_IMAGE_ORIGINS = new Set([
     new URL(MCP_PUBLIC_BASE_URL).origin,
 ]);
 const port = process.env.PORT || 3000;
-// const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v6.html";
-const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v7.html";
+ const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v6.html";
+// const RADIOFM_WIDGET_URI = "ui://radiofm/search-results-v7.html";
 const SERVER_VERSION = "1.1.0";
 const RADIOFM_TOOL_DESCRIPTION = [
     "Search live radio stations and podcasts worldwide from the Radio FM catalogue.",
@@ -1687,50 +1687,50 @@ function buildRadioFmWidgetHtml() {
 
 //sukhdeep
 // Initialize the widget's connection to ChatGPT.
-const initializeId = "radiofm-ui-init";
+// const initializeId = "radiofm-ui-init";
 
-function handleInitializeResponse(event) {
-  if (event.source !== window.parent) return;
+// function handleInitializeResponse(event) {
+//   if (event.source !== window.parent) return;
 
-  const message = event.data;
-  if (
-    !message ||
-    message.jsonrpc !== "2.0" ||
-    message.id !== initializeId
-  ) return;
+//   const message = event.data;
+//   if (
+//     !message ||
+//     message.jsonrpc !== "2.0" ||
+//     message.id !== initializeId
+//   ) return;
 
-  window.removeEventListener("message", handleInitializeResponse);
+//   window.removeEventListener("message", handleInitializeResponse);
 
-  if (message.error) {
-    console.error("RadioFM UI initialization failed:", message.error);
-    return;
-  }
+//   if (message.error) {
+//     console.error("RadioFM UI initialization failed:", message.error);
+//     return;
+//   }
 
-  window.parent.postMessage({
-    jsonrpc: "2.0",
-    method: "ui/notifications/initialized",
-    params: {}
-  }, "*");
+//   window.parent.postMessage({
+//     jsonrpc: "2.0",
+//     method: "ui/notifications/initialized",
+//     params: {}
+//   }, "*");
 
-  const context = message.result && message.result.hostContext;
-  if (context) applyTheme(context.theme);
-}
+//   const context = message.result && message.result.hostContext;
+//   if (context) applyTheme(context.theme);
+// }
 
-window.addEventListener("message", handleInitializeResponse);
+// window.addEventListener("message", handleInitializeResponse);
 
-window.parent.postMessage({
-  jsonrpc: "2.0",
-  id: initializeId,
-  method: "ui/initialize",
-  params: {
-    protocolVersion: "2026-01-26",
-    appInfo: {
-      name: "radiofm-widget",
-      version: "1.0.0"
-    },
-    appCapabilities: {}
-  }
-}, "*");
+// window.parent.postMessage({
+//   jsonrpc: "2.0",
+//   id: initializeId,
+//   method: "ui/initialize",
+//   params: {
+//     protocolVersion: "2026-01-26",
+//     appInfo: {
+//       name: "radiofm-widget",
+//       version: "1.0.0"
+//     },
+//     appCapabilities: {}
+//   }
+// }, "*");
 // 
     
   </script>
