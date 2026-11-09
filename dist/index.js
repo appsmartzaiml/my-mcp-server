@@ -1828,6 +1828,13 @@ app.post("/mcp", async (req, res) => {
     res.setHeader("Content-Type", "application/json");
     try {
         const { method, params, id } = req.body;
+        // Accept the notification that completes initialization.
+if (
+    method === "notifications/initialized" &&
+    !Object.prototype.hasOwnProperty.call(req.body, "id")
+) {
+    return res.status(202).end();
+}
         // Initialize handshake
         if (method === "initialize") {
             return res.json({
